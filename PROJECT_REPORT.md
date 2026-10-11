@@ -1,4 +1,4 @@
-# High-Performance Order Book and Matching Engine Simulator for the Indian Equity Cash Market
+# Order Book and Matching Engine Simulator with Portfolio Recommendation for the Indian Stock Market
 
 **Project progress report: literature survey, documentation and timeline**
 
@@ -15,7 +15,7 @@
 
 ## Abstract
 
-Electronic stock exchanges match buyers and sellers through a limit order book governed by price-time priority. This project builds a simulator of the Indian equity cash market (delivery and intraday trading) consisting of an order book, a matching engine, and a price-level market depth view showing the five best bids and asks. The engine is written in C++ with performance as a primary goal. Because operating a real trading venue and redistributing live exchange data are both restricted in India, the system is a simulator: it uses virtual participants, free exchange data from the previous trading day, and synthetic order flow. This report presents the literature survey, the regulatory and data feasibility studies, the proposed design, the work completed as of 11 October 2026, and the plan for the remaining work.
+A stock exchange keeps all waiting buy and sell orders in an order book and uses a matching engine to turn them into trades. This project builds a simulator of that process for the Indian stock market, covering delivery and intraday trading. It shows the five best buy and sell prices for each stock and matches orders by price and then by time. The project also integrates a portfolio management module that reads news with FinBERT, studies historical prices, and uses the SLSQP optimiser to suggest how much money to put in each stock. A single frontend shows the order book together with a buy suggestion for each stock. The system uses virtual money and previous-day data only. This report presents the literature survey, the design, the work completed so far and the plan ahead.
 
 ---
 
@@ -23,177 +23,132 @@ Electronic stock exchanges match buyers and sellers through a limit order book g
 
 ### 1.1 Background
 
-Modern exchanges such as the National Stock Exchange of India (NSE) are order-driven. Participants submit buy and sell orders, the exchange stores unmatched orders in a limit order book, and a matching engine pairs compatible orders. The rule that decides who trades first is price-time priority: the best price is served first, and among orders at the same price, the earliest is served first.
+When someone places an order to buy or sell a share, the exchange first tries to match it with an order on the opposite side. If no match is available, the order waits in the order book. The program that does the matching is called the matching engine. It must be correct, because it decides who trades with whom, and fast, because exchanges receive a very large number of orders.
 
-The matching engine is the performance-critical core of an exchange. It must process a very large number of order entries, modifications and cancellations with low and predictable delay, while remaining exactly correct and reproducible.
+Investors also face a second question: which stocks to buy, and how much money to put in each. This depends on how the stocks have performed in the past and on what the news says about them.
 
-### 1.2 Motivation
+Our project covers both sides. One part simulates how the exchange works. The other part suggests what to buy.
 
-- Matching engines combine data structure design, systems programming and financial market rules, which makes them a strong vehicle for studying high-performance computing in a real domain.
-- Published open-source engines and simulators are mostly modelled on United States, South African or cryptocurrency venues. The Indian market has its own rules: tick sizes that depend on price, daily price bands, an opening call auction, and a closing auction introduced in August 2026.
-- Order-level data for Indian stocks is not freely available, so realistic experimentation needs a simulator.
+### 1.2 Problem statement
 
-### 1.3 Problem statement
+To build a simulator of the Indian stock exchange's order book and matching engine, and to combine it with a portfolio management module that suggests which stocks to buy and how much money to allocate to each.
 
-To design and implement a high-performance limit order book and matching engine that follows the trading rules of the Indian equity cash market, to drive it with previous-day market data and synthetic order flow, and to evaluate its correctness and performance.
+### 1.3 Objectives
 
-### 1.4 Objectives
+1. Build an order book and matching engine that follows price-time priority.
+2. Show the five best buy prices and five best sell prices for each stock.
+3. Follow basic Indian market rules: tick size, price bands, and delivery and intraday trading.
+4. Run the simulator with previous-day NSE data and robot traders.
+5. Integrate the portfolio management module (FinBERT and SLSQP) and show its buy suggestion and allocation in the frontend.
+6. Test that the engine is correct and measure how fast it is.
 
-1. Implement a matching engine with strict price-time priority supporting limit, market and immediate-or-cancel orders, with modification and cancellation.
-2. Provide a price-level view of the book showing the five best bid and ask levels per stock.
-3. Model Indian cash market rules: tick sizes, price bands, opening and closing auctions, and stop-loss orders.
-4. Model delivery and intraday trading for virtual accounts, including margin and automatic square-off.
-5. Generate realistic order flow from previous-day exchange data without paid data sources.
-6. Validate the engine against real exchange order and trade records.
-7. Measure throughput and latency, and optimise the design accordingly.
-
-### 1.5 Scope and limitations
+### 1.4 Scope
 
 | In scope | Out of scope |
 |---|---|
-| NSE cash segment, EQ series | Futures, options, currency and commodity segments |
-| Delivery (CNC) and intraday (MIS) trading | Real-money trading and real user onboarding |
-| Previous-day and older data | Live market data |
-| Free data sources | Paid data feeds |
-| Virtual participants and robot traders | Network co-location and hardware acceleration |
+| NSE equity shares (cash market) | Futures, options, currency, commodities |
+| Delivery and intraday trading | Real money and real users |
+| Previous-day and older data | Live market prices |
+| Free data sources | Paid data |
+| Buy suggestions for study purposes | Investment advice |
 
-The system is a simulator for study and evaluation. It is not a trading venue.
-
----
-
-## 2. Literature survey
-
-The survey is organised into six themes. Section 2.7 summarises each work and its relevance; numbers in square brackets refer to the references in section 10.
-
-### 2.1 Market microstructure foundations
-
-Harris [1] and O'Hara [2] give the standard treatments of how trading mechanisms work, including order types, order precedence rules and the distinction between continuous and call markets. Madhavan [3] surveys the field. Glosten and Milgrom [4] and Kyle [5] explain the bid-ask spread and price impact as consequences of trading against better-informed participants. Glosten [6] analyses the electronic open limit order book as a market design and argues that it is robust against competing designs. These works establish the vocabulary and the rules that our engine must implement.
-
-### 2.2 Limit order book theory and empirical behaviour
-
-Parlour [7] and Foucault [8] model the choice between placing a limit order and a market order. Both show that the state of the book matters, and Parlour in particular shows that a place in the queue has value under time priority. Biais, Hillion and Spatt [9] study the Paris Bourse and find that order flow depends on the state of the book: traders supply liquidity when the spread is wide and consume it when the spread is narrow. Bouchaud, Mézard and Potters [10] report statistical regularities of order books, including the distribution of limit order prices around the current price. Gould et al. [11] survey the empirical facts and the models, and point out the distance between the two. These findings guide what a realistic synthetic book should look like.
-
-### 2.3 Order flow modelling and market simulation
-
-Gode and Sunder [12] show that traders who submit random orders within a budget constraint still produce efficient outcomes in a double auction, which suggests that market rules explain much of market behaviour. Smith et al. [13] build a statistical theory of the continuous double auction from random order placement and cancellation, and Farmer, Patelli and Zovko [14] show that such a model explains much of the variation in spreads and price diffusion in London Stock Exchange data. Cont, Stoikov and Talreja [15] model the book as a system of queues with Poisson arrivals. Huang, Lehalle and Rosenbaum [16] make arrival rates depend on queue sizes. Bacry, Mastromatteo and Muzy [17] review Hawkes processes, which capture the clustering of orders in time.
-
-On the systems side, ABIDES [18] is an open-source agent-based simulator with an exchange agent and many trading agents, and El Karmi [19] describes a deterministic C++ order book engine driven by Hawkes order flow. These works define the options for our order generator, from simple random flow to self-exciting models.
-
-### 2.4 Matching engine design and low-latency systems
-
-Thompson et al. [20] introduce the Disruptor, a lock-free ring buffer built around a single writer and cache-friendly memory layout, developed for the LMAX exchange. Fowler [21] describes the LMAX architecture, in which a single-threaded business logic processor fed by such buffers is reported to handle 6 million orders per second, with state recovered by replaying a journal of inputs. CoinTossX [22] is an open-source low-latency matching engine written in Java, using binary messages over UDP, built to simulate the Johannesburg Stock Exchange. Leber, Geib and Litz [23] and Lockwood et al. [24] move market data processing into FPGA hardware to reduce latency. Hasbrouck and Saar [25] measure low-latency activity and find that it is associated with narrower spreads, greater depth and lower short-term volatility. Budish, Cramton and Shim [26] argue that continuous-time matching creates a race for speed and propose frequent batch auctions.
-
-The design lessons we take from this theme are single-threaded deterministic matching, lock-free message passing, pre-allocated memory, binary message formats, and recovery by replay.
-
-### 2.5 Call auctions at the open and the close
-
-Madhavan [27] compares continuous and periodic trading mechanisms and shows that periodic auctions are more robust when information is unevenly distributed. Economides and Schwartz [28] argue for electronic call auctions alongside continuous trading. Pagano and Schwartz [29] find that introducing a closing call auction at the Paris Bourse lowered execution costs and improved price discovery. These works explain why exchanges open and close with auctions, which our simulator must implement.
-
-### 2.6 Studies of the Indian market
-
-Camilleri and Green [30] study the NSE's suspension of its opening and closing call auctions in 1999 and conclude that such auctions do not necessarily improve trading in a less liquid emerging market. Agarwalla, Jacob and Pandey [31] study the re-introduction of the opening call auction at NSE and find that it attracts little volume and gives only a modest improvement in price discovery. Aggarwal and Thomas [32] use the introduction of co-location at NSE to study the causal effect of algorithmic trading on market quality. Together they show that auction design and speed are open research questions in the Indian market specifically.
-
-On data, LOBSTER [33] reconstructs order books from NASDAQ message data for academic use, and Ntakaris et al. [34] publish a benchmark order book dataset for five Nasdaq Nordic stocks over ten trading days. We found no comparable open dataset for Indian equities.
-
-### 2.7 Summary of surveyed work
-
-| Ref | Work | Key contribution | Relevance to this project |
-|---|---|---|---|
-| [1] | Harris (2003) | Practitioner text on trading mechanisms and order precedence rules | Defines the rule set the engine implements |
-| [2] | O'Hara (1995) | Theoretical foundations of market microstructure | Background theory |
-| [3] | Madhavan (2000) | Survey of microstructure research | Map of the field |
-| [4] | Glosten and Milgrom (1985) | Spread arises from informed trading | Why spreads exist in a simulated book |
-| [5] | Kyle (1985) | Price impact and market depth | Interpreting depth in the book |
-| [6] | Glosten (1994) | Analysis of the electronic open limit order book | Justifies the order book design |
-| [7] | Parlour (1998) | Order choice depends on queue lengths | Importance of time priority and queue position |
-| [8] | Foucault (1999) | Limit versus market order choice under volatility | Order mix for robot traders |
-| [9] | Biais, Hillion and Spatt (1995) | Order flow depends on the state of the book | Realism target for synthetic flow |
-| [10] | Bouchaud, Mézard and Potters (2002) | Statistical properties of order books | Where to place synthetic limit orders |
-| [11] | Gould et al. (2013) | Survey of order book facts and models | Checklist of stylised facts |
-| [12] | Gode and Sunder (1993) | Zero-intelligence traders | Simplest robot trader model |
-| [13] | Smith et al. (2003) | Statistical theory of the continuous double auction | Baseline order flow generator |
-| [14] | Farmer, Patelli and Zovko (2005) | Zero-intelligence model tested on real data | Evidence the baseline is reasonable |
-| [15] | Cont, Stoikov and Talreja (2010) | Queueing model of the order book | Arrival and cancellation rates |
-| [16] | Huang, Lehalle and Rosenbaum (2015) | Queue-reactive model | State-dependent order flow |
-| [17] | Bacry, Mastromatteo and Muzy (2015) | Hawkes processes in finance | Clustered order arrivals (future work) |
-| [18] | Byrd, Hybinette and Balch (2020) | ABIDES agent-based market simulator | Reference simulator architecture |
-| [19] | El Karmi (2025) | Deterministic C++ book with Hawkes flow | Closest related system |
-| [20] | Thompson et al. (2011) | Disruptor lock-free ring buffer | Message passing between threads |
-| [21] | Fowler (2011) | LMAX architecture | Single-threaded core, journal and replay |
-| [22] | Jericevich, Sing and Gebbie (2021) | CoinTossX open-source matching engine | Comparable engine for another market |
-| [23] | Leber, Geib and Litz (2011) | FPGA acceleration of trading systems | Hardware direction, outside our scope |
-| [24] | Lockwood et al. (2012) | FPGA library for low-latency trading | Hardware direction, outside our scope |
-| [25] | Hasbrouck and Saar (2013) | Low-latency trading and market quality | Why latency matters |
-| [26] | Budish, Cramton and Shim (2015) | Frequent batch auctions | Alternative matching design |
-| [27] | Madhavan (1992) | Continuous versus periodic mechanisms | Basis for auction sessions |
-| [28] | Economides and Schwartz (1995) | Electronic call market trading | Basis for auction sessions |
-| [29] | Pagano and Schwartz (2003) | Effect of a closing call auction | Basis for the closing auction |
-| [30] | Camilleri and Green (2009) | NSE auction suspension in 1999 | Indian evidence on auctions |
-| [31] | Agarwalla, Jacob and Pandey (2015) | NSE opening call auction | Indian evidence on the pre-open session |
-| [32] | Aggarwal and Thomas (2014) | Algorithmic trading at NSE | Indian evidence on speed |
-| [33] | Huang and Polak (2011) | LOBSTER order book reconstruction | Model for rebuilding a book from messages |
-| [34] | Ntakaris et al. (2018) | Public benchmark order book dataset | Shows what open data exists elsewhere |
-
-### 2.8 Gaps identified
-
-1. **No open order-level data for Indian equities.** Public datasets cover NASDAQ, Nasdaq Nordic and cryptocurrency venues. For NSE we found only paid products and a small free sample.
-2. **No open engine that models Indian rules.** The open engines and simulators we surveyed follow the rules of other markets. None that we found models price-dependent tick sizes, daily price bands, the current pre-open structure, or the closing auction introduced in August 2026.
-3. **Realism and performance are studied separately.** Simulation work concentrates on realistic order flow with performance secondary. Engine work concentrates on speed with simplified market rules.
-4. **Engines are rarely validated against real exchange output.** We found little reporting of open engines being checked trade-by-trade against exchange records.
-5. **The closing auction is new.** To our knowledge there is not yet published empirical work on it, so a simulator is a useful place to study it.
-
-This project addresses gaps 2, 3 and 4 directly, and works around gap 1 with synthetic order flow calibrated to free previous-day data.
+The system is a simulator for learning. The buy suggestions are an academic demonstration and are not investment advice.
 
 ---
 
-## 3. Regulatory and domain study
+## 2. Basic concepts
 
-### 3.1 Regulatory constraints
-
-| Constraint | Source | Effect on the project |
-|---|---|---|
-| Trading in listed securities must take place on a recognised stock exchange | Securities Contracts (Regulation) Act, 1956 [35] | The system is a simulator with virtual money only |
-| Real-time prices may not be shared with virtual-trading platforms; education use needs a one-day lag and no monetary incentive | SEBI circular, 24 May 2024 [36] | Only previous-day data is used; no rewards |
-| Retail algorithmic trading through broker APIs is regulated | SEBI circular, 4 February 2025 [38] | The system places no real orders |
-| Exchange data is licensed | NSE data policies | Data files are not redistributed or committed to the repository |
-
-### 3.2 Market rules to be modelled
-
-| Rule | Current state |
+| Term | Meaning |
 |---|---|
-| Tick size [42] | ₹0.01 below ₹250; ₹0.05 up to ₹1,000; ₹0.10 up to ₹5,000; ₹0.50 up to ₹10,000; ₹1.00 up to ₹20,000; ₹5.00 above |
-| Price bands [37] | Fixed 2, 5, 10 or 20% for stocks without derivatives; a 10% dynamic band for stocks with derivatives |
-| Market-wide circuit breakers | Halts at 10, 15 and 20% index moves |
-| Pre-open session [39] | 9:00 to 9:15 call auction; the opening price maximises matched quantity |
-| Closing auction [39] | Introduced 3 August 2026 for stocks with derivatives |
-| Delivery trading | Full funds to buy, shares held to sell, settlement on the next working day |
-| Intraday trading | Margin-based with a minimum of 20%, short selling allowed, positions closed the same day |
-
-### 3.3 Exchange message formats
-
-NSE's tick-by-tick feed specification [40] defines order messages (new, modify, cancel) and trade messages carrying an order number, a stock token, side, price in paise and quantity. Our internal message format follows the same model, which keeps the engine compatible with real exchange data.
+| Order book | The list of all waiting buy and sell orders for a stock |
+| Bid and ask | The bid is the highest price a buyer is offering. The ask is the lowest price a seller is asking. |
+| Market depth (L2) | The total quantity waiting at each price. We show the best five prices on each side. |
+| Matching engine | The program that pairs buy orders with sell orders to create trades |
+| Price-time priority | The better price is served first. If two orders have the same price, the earlier one is served first. |
+| Limit order | An order to buy or sell at a stated price or better |
+| Market order | An order to buy or sell immediately at the best available price |
+| Delivery trading | Shares are actually bought and held; the buyer pays the full amount |
+| Intraday trading | Shares are bought and sold on the same day; only a margin is needed |
+| Tick size | The smallest step by which a price can change |
+| Price band | The highest and lowest price allowed for a stock in a day |
+| Sentiment analysis | Deciding whether a piece of text is positive, negative or neutral |
+| FinBERT | A language model trained on financial text, used for sentiment analysis |
+| Portfolio optimisation | Deciding what share of money to put in each stock to balance return and risk |
+| SLSQP | An optimisation method that finds the best values while respecting given limits |
 
 ---
 
-## 4. Data feasibility study
+## 3. Literature survey
 
-We examined whether the project can run on free data alone. All files below were downloaded and inspected on 11 October 2026 without login or payment.
+We studied three areas: how order books and exchanges work, what similar systems already exist, and how portfolios are built using prices and news. Numbers in square brackets refer to the references in section 11.
 
-| Data | Contents | Use |
+### 3.1 Order books and exchanges
+
+Harris [1] explains how stock exchanges work, including order types and the price-time priority rule that our engine follows. Gould et al. [2] summarise what researchers know about order books and how they are modelled. Gode and Sunder [3] show that even traders who place random orders within their budget produce sensible market prices, which supports using simple robot traders in a simulator. Agarwalla, Jacob and Pandey [4] study the opening auction at NSE and find that it attracts little trading and improves price discovery only slightly.
+
+### 3.2 Existing systems
+
+Fowler [5] describes the LMAX exchange, which does all its matching on a single thread in memory and keeps a log of every input so that the system can be replayed. ABIDES [6] is an open-source market simulator in which many software agents trade through a simulated exchange. CoinTossX [7] is an open-source matching engine built to simulate the Johannesburg Stock Exchange. These systems show that a matching engine and a simulator can be built with open tools, but none of them follows Indian market rules.
+
+### 3.3 Portfolio management and news sentiment
+
+Markowitz [8] founded modern portfolio theory: an investor should choose how much to invest in each stock by balancing expected return against risk. Tetlock [9] shows that the tone of financial news is linked to how the stock market moves afterwards, which is the reason to include news in investment decisions. Araci [10] introduces FinBERT, a language model trained on financial text that labels a sentence as positive, negative or neutral. Kraft [11] describes SLSQP, the optimisation method used to compute the portfolio allocation under constraints.
+
+### 3.4 Summary
+
+| Ref | Work | What it says | How we use it |
+|---|---|---|---|
+| [1] | Harris (2003) | How exchanges and order matching work | Rules for our matching engine |
+| [2] | Gould et al. (2013) | Survey of research on order books | What a realistic order book looks like |
+| [3] | Gode and Sunder (1993) | Random traders still produce sensible prices | Basis for our robot traders |
+| [4] | Agarwalla et al. (2015) | Study of the NSE opening auction | Understanding of the Indian market |
+| [5] | Fowler (2011) | Design of the LMAX exchange | Single-thread design and replay log |
+| [6] | Byrd et al. (2020) | ABIDES market simulator | Example of a simulator with software traders |
+| [7] | Jericevich et al. (2021) | CoinTossX matching engine | Closest existing system, for another market |
+| [8] | Markowitz (1952) | Balance return against risk | Theory behind the allocation |
+| [9] | Tetlock (2007) | News tone is linked to market moves | Reason for using news sentiment |
+| [10] | Araci (2019) | FinBERT sentiment model | Scoring news about each stock |
+| [11] | Kraft (1988) | SLSQP optimisation method | Computing the allocation |
+
+### 3.5 Gaps identified
+
+1. **No open system for Indian rules.** The open matching engines and simulators we reviewed are built for other markets. We did not find one that follows Indian tick sizes, price bands, and delivery and intraday trading.
+2. **No free order-level data for Indian stocks.** Full order-by-order data from NSE is a paid product, so a simulator with robot traders is needed.
+3. **Trading simulation and portfolio advice are separate.** In the systems we reviewed, the exchange simulator and the portfolio tool are different programs. Our project shows both in one frontend.
+
+---
+
+## 4. Rules and data
+
+### 4.1 Regulations that shape the project
+
+| Rule | Source | Effect on our project |
 |---|---|---|
-| NSE full bhavcopy (daily) | Previous close, open, high, low, close, average price, volume, number of trades, delivery percentage | Reference prices, order flow sizing, delivery versus intraday split |
-| NSE price band list (daily) | Circuit band per stock | Daily price limits |
-| NSE Clearing margin file (daily) | Margin rates per stock | Intraday margin |
-| NSE list of securities | Symbol, series, lot size, ISIN | Instrument master |
-| NSE sample order and trade files [41] | 300,000 real order events for 579 symbols and 300,000 trades, dated 10 April 2024 | Validation against real exchange output |
-| NSE sample order book snapshot | About 500,000 resting orders across 54 symbols | Testing book construction and the depth view |
+| Shares can be traded only on a recognised stock exchange | Securities Contracts (Regulation) Act, 1956 [12] | We build a simulator with virtual money, not a real trading platform |
+| Live prices cannot be shared with virtual trading platforms; for education, data must be at least one day old with no rewards | SEBI circular, 24 May 2024 [13] | We use previous-day data only and give no rewards |
+| Exchange data belongs to the exchange | NSE data policy | We do not upload downloaded data files to GitHub |
 
-**Findings**
+### 4.2 Market rules used in the simulator
 
-- Daily reference data for every stock is freely available and sufficient to configure the simulator.
-- The sample order file covers the complete pre-open session and the first 12 seconds of continuous trading. It is enough to validate the opening auction and matching logic, but not to replay a full day.
-- A full day of real order-level data is a paid product. The simulator therefore generates synthetic orders calibrated to the previous day's statistics.
-- Free one-minute price bars are still to be confirmed (see section 9).
+| Rule | Details |
+|---|---|
+| Tick size | Depends on the share price, from ₹0.01 for shares under ₹250 up to ₹5 for shares above ₹20,000 |
+| Price band | A stock cannot move more than a fixed percentage (2, 5, 10 or 20%) from the previous day's close |
+| Delivery trading | Full amount needed to buy; shares must be owned to sell |
+| Intraday trading | A margin of at least 20% is needed; positions are closed the same day |
+
+### 4.3 Data sources
+
+All data is free.
+
+| Data | What it contains | Used for |
+|---|---|---|
+| NSE daily bhavcopy | Previous close, open, high, low, close, volume and delivery percentage for every stock | Setting up each stock in the simulator |
+| NSE price band list | Price band for every stock | Daily price limits |
+| NSE sample order and trade files [14] | 300,000 real orders and 300,000 real trades from 10 April 2024 | Checking our engine against the real exchange |
+| News and historical prices | News articles and past prices of the stocks in the portfolio | Input to the portfolio management module |
+
+We downloaded and checked the three NSE files on 11 October 2026. The NSE sample covers only part of one day, so it is used for testing and not for running a full session.
 
 ---
 
@@ -202,277 +157,202 @@ We examined whether the project can run on free data alone. All files below were
 ### 5.1 Architecture
 
 ```
- Previous-day NSE files          NSE sample orders
-          |                              |
-          v                              v
-  +----------------+            +------------------+
-  | Data loader    |            | Sample replayer  |
-  +----------------+            +------------------+
-          |                              |
-          v                              |
-  +----------------+                     |
-  | Robot traders  |----+                |
-  +----------------+    |                |
-                        v                v
-  Manual orders --> +------------------------+     +-----------------+
-                    | Order gateway and      | --> | Account and     |
-                    | validation             |     | risk layer      |
-                    +------------------------+     +-----------------+
-                               |
-                               v
-                    +------------------------+     +-----------------+
-                    | Matching engine        | --> | Input journal   |
-                    | (order book per stock) |     +-----------------+
-                    +------------------------+
-                               |
-                 +-------------+-------------+
-                 v                           v
-        +-----------------+         +-----------------+
-        | Top-5 depth and |         | Dashboard and   |
-        | trade feed      |         | reports         |
-        +-----------------+         +-----------------+
++-----------------------------+      +-------------------------------+
+| Module 1: Exchange simulator|      | Module 2: Portfolio manager   |
+|                             |      |                               |
+|  Previous-day NSE data      |      |  News          Historical     |
+|          |                  |      |   |            prices         |
+|          v                  |      |   v               |           |
+|  Robot traders              |      |  FinBERT          |           |
+|          |                  |      |  (sentiment)      |           |
+|          v                  |      |   |               |           |
+|  Matching engine            |      |   +-------+-------+           |
+|  (order book per stock)     |      |           v                   |
+|                             |      |  SLSQP optimiser              |
+|                             |      |  (allocation per stock)       |
++--------------+--------------+      +---------------+---------------+
+               |                                     |
+               v                                     v
+        +--------------------------------------------------+
+        | Module 3: Frontend                               |
+        | Best 5 bids and asks, trades, buy suggestion,    |
+        | suggested allocation                             |
+        +--------------------------------------------------+
 ```
 
-### 5.2 Design decisions
+### 5.2 Module 1: Exchange simulator
 
-| Decision | Reason |
-|---|---|
-| Integer prices in paise, converted to a tick index | Exact arithmetic and fast comparison |
-| Flat array of price levels within the day's price band | Constant-time insert, cancel and lookup; the band keeps the array small |
-| First-in-first-out queue of orders at each price level | Implements time priority directly |
-| Pre-allocated order pool | No memory allocation during matching |
-| Single matching thread per group of stocks | Determinism without locks [20], [21] |
-| Journal of all inputs | Recovery and exact replay for testing [21] |
-| Binary fixed-size messages | Low parsing cost; mirrors the exchange format [40] |
+This module is the order book and matching engine.
 
-### 5.3 Requirements
+1. Each stock is set up using the previous day's NSE data: its last closing price, tick size and price band.
+2. Robot traders place buy and sell orders around the previous day's prices. We can also place orders ourselves.
+3. Each order is checked: the price must follow the tick size and stay inside the price band.
+4. The matching engine tries to match the order. The better price goes first; at the same price, the earlier order goes first.
+5. Any unmatched part of the order waits in the order book.
+6. The engine outputs the trades and the five best prices on each side.
+
+Design choices that keep it fast and correct:
+
+- Prices are stored as whole numbers in paise, so there are no rounding errors.
+- Orders at the same price are kept in a queue, so the earliest is always served first.
+- Because the price band limits how far a price can move in a day, the price levels can be kept in a simple array and found directly.
+- Memory for orders is reserved in advance, so the engine does not slow down while matching.
+- One thread does all the matching for a stock, so the same inputs always give the same result [5].
+
+### 5.3 Module 2: Portfolio manager
+
+This module suggests how to divide money among stocks.
+
+1. It collects recent news and historical prices for the stocks in the portfolio.
+2. FinBERT reads each news item and labels it positive, negative or neutral. This gives a sentiment score for each stock [10].
+3. From the historical prices, it works out each stock's return and risk [8].
+4. The SLSQP optimiser uses the sentiment scores and the return and risk figures to find the share of money for each stock. The shares must add up to 100% [11].
+5. The output is the amount of money to allocate to each stock.
+
+### 5.4 Module 3: Frontend and integration
+
+The frontend brings the two modules together on one screen.
+
+- From Module 1 it shows the five best bids and asks and the recent trades for a stock.
+- From Module 2 it shows the suggested allocation and whether the stock is a buy or not.
+
+A user can therefore see the current state of the order book and the suggestion for the same stock side by side.
+
+### 5.5 Requirements
 
 **Functional**
 
-1. Accept, modify and cancel limit, market and immediate-or-cancel orders.
-2. Match by price-time priority and report trades.
-3. Publish the five best bid and ask levels per stock.
-4. Enforce tick size and price band validation.
-5. Run opening and closing call auctions.
-6. Support stop-loss orders.
-7. Maintain virtual accounts with delivery and intraday rules.
-8. Replay previous-day sessions using robot traders.
+1. Accept, modify and cancel limit and market orders.
+2. Match orders by price-time priority and report trades.
+3. Show the five best bid and ask prices for each stock.
+4. Reject orders that break the tick size or price band.
+5. Handle delivery and intraday orders for virtual accounts.
+6. Analyse news sentiment and compute the portfolio allocation.
+7. Show the buy suggestion and allocation in the frontend.
 
 **Non-functional**
 
-1. Performance: the target is a sub-microsecond median processing time per order on a single core, to be confirmed by measurement.
-2. Determinism: the same input sequence always produces the same output.
-3. Correctness: agreement with a reference implementation and with real exchange records.
-4. Reproducibility: all experiments runnable from the repository.
+1. Speed: the engine should handle a large number of orders quickly. We will measure orders per second and time per order.
+2. Correctness: the same inputs must always give the same trades.
+3. Ease of use: the frontend should be simple to read.
 
-### 5.4 Tools and technologies
+### 5.6 Tools and technologies
 
-| Purpose | Choice |
+| Part | Technology |
 |---|---|
-| Engine | C++ |
-| Data scripts | Python |
+| Matching engine | C++ |
+| Portfolio manager | Python, FinBERT, SLSQP optimiser from SciPy |
+| Frontend | [fill in] |
 | Version control | Git and GitHub |
-| Performance analysis | Linux `perf` and latency histograms |
-| Build and unit testing | To be fixed in the specification phase |
 
-### 5.5 Evaluation plan
+### 5.7 Testing plan
 
-| Aspect | Method |
+| What we test | How |
 |---|---|
-| Correctness | Unit tests; comparison with a simple reference implementation on random inputs |
-| Fidelity | Replay of NSE sample orders; comparison of our trades and opening prices with the exchange's |
-| Performance | Orders per second; median, 99th and 99.9th percentile latency |
-| Realism | Spread and depth of the simulated book compared with the regularities reported in [9], [10], [11] |
+| Matching rules | Small hand-made examples with known answers |
+| Agreement with the real exchange | Feed NSE sample orders to our engine and compare the trades |
+| Speed | Send a large number of generated orders and measure the time |
+| Portfolio module | Check sentiment labels on sample headlines and that allocations add up to 100% |
 
 ---
 
 ## 6. Work completed as of 11 October 2026
 
-| Activity | Status | Evidence |
-|---|---|---|
-| Repository set up and first prototype of core order book models and matching flow | In progress | Commits `4015b69`, `bec7c2c`; `orderBook.cpp` |
-| Literature survey | Completed | Section 2 of this report |
-| Regulatory and market rules study | Completed | Section 3; `PROJECT_PLAN.md` |
-| Data feasibility study | Completed | Section 4; `PROJECT_PLAN.md` |
-| Scope definition | Completed | Section 1.5 |
-| System design | Completed at design level | Section 5 |
-| Project plan | Completed | `PROJECT_PLAN.md`, commit `dfa1c4b` |
-| Engine implementation | Prototype stage | `orderBook.cpp` |
-| Testing and benchmarking | Not started | |
-
-No correctness or performance results are reported yet. The prototype predates the scope decisions in this report and will be revised against the specification.
+| Activity | Status |
+|---|---|
+| Problem definition and scope | Completed |
+| Literature survey | Completed |
+| Study of regulations and market rules | Completed |
+| Study of free data sources | Completed |
+| System design | Completed |
+| Project plan (`PROJECT_PLAN.md`) | Completed |
+| First prototype of the order book and matching flow (`orderBook.cpp`) | In progress |
+| Portfolio management module | Developed as a separate project |
+| Integration of the portfolio module with the frontend | In progress |
+| Testing and speed measurement | Not started |
 
 ---
 
 ## 7. Timeline
 
-### 7.1 Milestones reached
+### 7.1 Work done so far
 
 | Date | Milestone |
 |---|---|
-| 17 June 2026 | Repository created; first prototype of core order book models and matching flow |
+| 17 June 2026 | Repository created; first prototype of the order book and matching flow |
 | 22 June 2026 | Prototype revised |
-| 11 October 2026 | Literature survey, regulatory study and data feasibility study completed; scope fixed |
-| 11 October 2026 | Project plan committed and published to GitHub |
+| [fill in] | Portfolio management module developed |
+| 11 October 2026 | Literature survey, study of rules and data sources, and project plan completed |
 
-### 7.2 Plan for remaining work
+### 7.2 Plan ahead
 
-| Week | Period | Work | Deliverable |
-|---|---|---|---|
-| 1 | 12 to 18 Oct 2026 | Specification: instrument fields, order types, validation rules, message formats | Specification document |
-| 2 to 3 | 19 Oct to 1 Nov 2026 | Matching engine and reference implementation | Engine passing unit tests |
-| 4 | 2 to 8 Nov 2026 | Benchmark harness and top-5 depth output | First performance figures |
-| 5 | 9 to 15 Nov 2026 | NSE sample parser and validation | Comparison with exchange trades |
-| 6 | 16 to 22 Nov 2026 | Daily data downloader and instrument setup | Stocks configured from real data |
-| 7 to 8 | 23 Nov to 6 Dec 2026 | Robot traders and previous-day replay; exchange rules and auctions | Simulated trading sessions |
-| 9 | 7 to 13 Dec 2026 | Delivery and intraday accounts | Margin and square-off working |
-| 10 | 14 to 20 Dec 2026 | Dashboard, performance tuning, final report | Final demonstration |
-
-```mermaid
-gantt
-    title Plan for remaining work
-    dateFormat YYYY-MM-DD
-    axisFormat %d %b
-    section Core engine
-    Specification                        :s1, 2026-10-12, 7d
-    Matching engine and reference model  :s2, after s1, 14d
-    Benchmark harness and depth output   :s3, after s2, 7d
-    section Data and realism
-    NSE sample parser and validation     :d1, after s3, 7d
-    Daily data downloader                :d2, after d1, 7d
-    Robot traders and replay mode        :d3, after d2, 14d
-    section Rules and accounts
-    Exchange rules and auctions          :r1, after d2, 14d
-    Delivery and intraday accounts       :r2, after d3, 7d
-    section Wrap-up
-    Dashboard, tuning and final report   :w1, after r2, 7d
-```
+| Period | Work | Status |
+|---|---|---|
+| 12 to 18 Oct 2026 | Finalise order types, rules and message formats | Next |
+| 19 Oct to 1 Nov 2026 | Complete the matching engine and the best-five view | Planned |
+| 2 to 15 Nov 2026 | Test with NSE sample data and measure speed | Planned |
+| 16 to 29 Nov 2026 | Previous-day data loader, robot traders, delivery and intraday rules | Planned |
+| 30 Nov to 13 Dec 2026 | Frontend and integration of the portfolio module | Planned |
+| 14 to 20 Dec 2026 | Final testing, documentation and demonstration | Planned |
 
 ---
 
 ## 8. Expected outcomes
 
-1. A matching engine for the Indian equity cash market with measured throughput and latency.
-2. A depth view of the five best bids and asks per stock.
-3. A validation report comparing the engine's output with real NSE order and trade records.
-4. A simulator that replays the previous trading day with robot traders under Indian market rules.
-5. A documented, reproducible open-source repository.
+1. A working order book and matching engine for Indian stocks, with measured speed.
+2. A view of the five best bids and asks for each stock.
+3. A comparison of our engine's trades with real NSE sample trades.
+4. A portfolio module that suggests how much money to allocate to each stock.
+5. A single frontend that shows the order book and the buy suggestion together.
 
 ---
 
-## 9. Risks and open items
+## 9. Risks
 
-| Risk or open item | Mitigation |
+| Risk | How we handle it |
 |---|---|
-| Free one-minute price data is unconfirmed | The simulator can run from daily open, high, low and close alone |
-| The NSE sample covers only part of a day and may be incomplete for some symbols | Validate on the opening auction first, where the sample is complete |
-| Synthetic order flow may not be realistic | Start with the zero-intelligence model [13], [14] and compare with known regularities |
-| Performance targets may not be met on available hardware | Measure early and report results as obtained |
-| Closing auction timings come from broker summaries | Confirm against the NSE circular before implementation |
-| Exchange data terms of use | Do not commit or redistribute downloaded files |
+| Full-day order data for Indian stocks is not free | Use robot traders guided by previous-day data |
+| The NSE sample covers only part of a day | Use it only for testing the engine |
+| News sentiment may be wrong for some articles | Combine sentiment with historical price data, not sentiment alone |
+| Connecting a C++ engine and a Python module to one frontend | Agree on a simple data format between the modules early |
 
 ---
 
-## 10. References
+## 10. Future scope
 
-**Books and surveys**
+- Opening and closing auctions, as used by NSE.
+- Stop-loss orders.
+- More realistic robot traders.
+- Testing the buy suggestions against past data to see how they would have performed.
+
+---
+
+## 11. References
 
 [1] L. Harris, *Trading and Exchanges: Market Microstructure for Practitioners*. Oxford University Press, 2003.
 
-[2] M. O'Hara, *Market Microstructure Theory*. Blackwell, 1995.
+[2] M. D. Gould, M. A. Porter, S. Williams, M. McDonald, D. J. Fenn and S. D. Howison, "Limit order books," *Quantitative Finance*, vol. 13, no. 11, pp. 1709–1742, 2013.
 
-[3] A. Madhavan, "Market microstructure: A survey," *Journal of Financial Markets*, vol. 3, no. 3, pp. 205–258, 2000.
+[3] D. K. Gode and S. Sunder, "Allocative efficiency of markets with zero-intelligence traders: Market as a partial substitute for individual rationality," *Journal of Political Economy*, vol. 101, no. 1, pp. 119–137, 1993.
 
-**Theory**
+[4] S. K. Agarwalla, J. Jacob and A. Pandey, "Impact of the introduction of call auction on price discovery: Evidence from the Indian stock market using high-frequency data," *International Review of Financial Analysis*, vol. 39, pp. 167–178, 2015.
 
-[4] L. R. Glosten and P. R. Milgrom, "Bid, ask and transaction prices in a specialist market with heterogeneously informed traders," *Journal of Financial Economics*, vol. 14, no. 1, pp. 71–100, 1985.
+[5] M. Fowler, "The LMAX architecture," martinfowler.com, 2011.
 
-[5] A. S. Kyle, "Continuous auctions and insider trading," *Econometrica*, vol. 53, no. 6, pp. 1315–1335, 1985.
+[6] D. Byrd, M. Hybinette and T. H. Balch, "ABIDES: Towards high-fidelity multi-agent market simulation," in *Proc. ACM SIGSIM Conference on Principles of Advanced Discrete Simulation*, 2020, pp. 11–22.
 
-[6] L. R. Glosten, "Is the electronic open limit order book inevitable?" *Journal of Finance*, vol. 49, no. 4, pp. 1127–1161, 1994.
+[7] I. Jericevich, D. Sing and T. Gebbie, "CoinTossX: An open-source low-latency high-throughput matching engine," arXiv:2102.10925, 2021.
 
-[7] C. A. Parlour, "Price dynamics in limit order markets," *Review of Financial Studies*, vol. 11, no. 4, pp. 789–816, 1998.
+[8] H. Markowitz, "Portfolio selection," *Journal of Finance*, vol. 7, no. 1, pp. 77–91, 1952.
 
-[8] T. Foucault, "Order flow composition and trading costs in a dynamic limit order market," *Journal of Financial Markets*, vol. 2, no. 2, pp. 99–134, 1999.
+[9] P. C. Tetlock, "Giving content to investor sentiment: The role of media in the stock market," *Journal of Finance*, vol. 62, no. 3, pp. 1139–1168, 2007.
 
-**Empirical studies of order books**
+[10] D. Araci, "FinBERT: Financial sentiment analysis with pre-trained language models," arXiv:1908.10063, 2019.
 
-[9] B. Biais, P. Hillion and C. Spatt, "An empirical analysis of the limit order book and the order flow in the Paris Bourse," *Journal of Finance*, vol. 50, no. 5, pp. 1655–1689, 1995.
+[11] D. Kraft, "A software package for sequential quadratic programming," Technical Report DFVLR-FB 88-28, German Aerospace Center, 1988.
 
-[10] J.-P. Bouchaud, M. Mézard and M. Potters, "Statistical properties of stock order books: Empirical results and models," *Quantitative Finance*, vol. 2, no. 4, pp. 251–256, 2002.
+[12] Government of India, *The Securities Contracts (Regulation) Act, 1956*.
 
-[11] M. D. Gould, M. A. Porter, S. Williams, M. McDonald, D. J. Fenn and S. D. Howison, "Limit order books," *Quantitative Finance*, vol. 13, no. 11, pp. 1709–1742, 2013.
+[13] Securities and Exchange Board of India, "Norms for sharing of real time price data to third parties," circular SEBI/HO/MRD/MRD-PoD-3/P/CIR/2024/56, 24 May 2024.
 
-**Order flow models and simulation**
-
-[12] D. K. Gode and S. Sunder, "Allocative efficiency of markets with zero-intelligence traders: Market as a partial substitute for individual rationality," *Journal of Political Economy*, vol. 101, no. 1, pp. 119–137, 1993.
-
-[13] E. Smith, J. D. Farmer, L. Gillemot and S. Krishnamurthy, "Statistical theory of the continuous double auction," *Quantitative Finance*, vol. 3, no. 6, pp. 481–514, 2003.
-
-[14] J. D. Farmer, P. Patelli and I. I. Zovko, "The predictive power of zero intelligence in financial markets," *Proceedings of the National Academy of Sciences*, vol. 102, no. 6, pp. 2254–2259, 2005.
-
-[15] R. Cont, S. Stoikov and R. Talreja, "A stochastic model for order book dynamics," *Operations Research*, vol. 58, no. 3, pp. 549–563, 2010.
-
-[16] W. Huang, C.-A. Lehalle and M. Rosenbaum, "Simulating and analyzing order book data: The queue-reactive model," *Journal of the American Statistical Association*, vol. 110, no. 509, pp. 107–122, 2015.
-
-[17] E. Bacry, I. Mastromatteo and J.-F. Muzy, "Hawkes processes in finance," *Market Microstructure and Liquidity*, vol. 1, no. 1, 1550005, 2015.
-
-[18] D. Byrd, M. Hybinette and T. H. Balch, "ABIDES: Towards high-fidelity multi-agent market simulation," in *Proc. ACM SIGSIM Conference on Principles of Advanced Discrete Simulation (SIGSIM-PADS)*, 2020, pp. 11–22. doi: 10.1145/3384441.3395986.
-
-[19] S. El Karmi, "A deterministic limit order book simulator with Hawkes-driven order flow," arXiv:2510.08085, 2025.
-
-**Matching engines and low-latency systems**
-
-[20] M. Thompson, D. Farley, M. Barker, P. Gee and A. Stewart, "Disruptor: High performance alternative to bounded queues for exchanging data between concurrent threads," LMAX technical paper, 2011.
-
-[21] M. Fowler, "The LMAX architecture," martinfowler.com, 2011.
-
-[22] I. Jericevich, D. Sing and T. Gebbie, "CoinTossX: An open-source low-latency high-throughput matching engine," arXiv:2102.10925, 2021.
-
-[23] C. Leber, B. Geib and H. Litz, "High frequency trading acceleration using FPGAs," in *Proc. 21st International Conference on Field Programmable Logic and Applications (FPL)*, 2011, pp. 317–322.
-
-[24] J. W. Lockwood, A. Gupte, N. Mehta, M. Blott, T. English and K. Vissers, "A low-latency library in FPGA hardware for high-frequency trading (HFT)," in *Proc. IEEE 20th Annual Symposium on High-Performance Interconnects*, 2012, pp. 9–16.
-
-[25] J. Hasbrouck and G. Saar, "Low-latency trading," *Journal of Financial Markets*, vol. 16, no. 4, pp. 646–679, 2013.
-
-[26] E. Budish, P. Cramton and J. Shim, "The high-frequency trading arms race: Frequent batch auctions as a market design response," *Quarterly Journal of Economics*, vol. 130, no. 4, pp. 1547–1621, 2015.
-
-**Call auctions**
-
-[27] A. Madhavan, "Trading mechanisms in securities markets," *Journal of Finance*, vol. 47, no. 2, pp. 607–641, 1992.
-
-[28] N. Economides and R. A. Schwartz, "Electronic call market trading," *Journal of Portfolio Management*, vol. 21, no. 3, pp. 10–18, 1995.
-
-[29] M. S. Pagano and R. A. Schwartz, "A closing call's impact on market quality at Euronext Paris," *Journal of Financial Economics*, vol. 68, no. 3, pp. 439–484, 2003.
-
-**Indian market**
-
-[30] S. J. Camilleri and C. J. Green, "The impact of the suspension of opening and closing call auctions: Evidence from the National Stock Exchange of India," *International Journal of Banking, Accounting and Finance*, vol. 1, no. 3, pp. 257–284, 2009.
-
-[31] S. K. Agarwalla, J. Jacob and A. Pandey, "Impact of the introduction of call auction on price discovery: Evidence from the Indian stock market using high-frequency data," *International Review of Financial Analysis*, vol. 39, pp. 167–178, 2015.
-
-[32] N. Aggarwal and S. Thomas, "The causal impact of algorithmic trading on market quality," Indira Gandhi Institute of Development Research working paper, 2014.
-
-**Datasets**
-
-[33] R. Huang and T. Polak, "LOBSTER: Limit order book reconstruction system," SSRN working paper, 2011.
-
-[34] A. Ntakaris, M. Magris, J. Kanniainen, M. Gabbouj and A. Iosifidis, "Benchmark dataset for mid-price forecasting of limit order book data with machine learning methods," *Journal of Forecasting*, vol. 37, no. 8, pp. 852–866, 2018.
-
-**Regulatory and exchange documents**
-
-[35] Government of India, *The Securities Contracts (Regulation) Act, 1956*.
-
-[36] Securities and Exchange Board of India, "Norms for sharing of real time price data to third parties," circular SEBI/HO/MRD/MRD-PoD-3/P/CIR/2024/56, 24 May 2024.
-
-[37] Securities and Exchange Board of India, circular on dynamic price bands for scrips in the derivatives segment, SEBI/HO/MRD/TPD-1/P/CIR/2024/58, 24 May 2024.
-
-[38] Securities and Exchange Board of India, "Safer participation of retail investors in algorithmic trading," circular, 4 February 2025.
-
-[39] Securities and Exchange Board of India, circular introducing the Closing Auction Session and revising the pre-open session, 16 January 2026; National Stock Exchange of India, circular NSE/CMTR/73362, 18 March 2026.
-
-[40] NSE Data & Analytics Ltd., *MTBT API Specification*, version 6.6, 7 September 2026.
-
-[41] NSE Data & Analytics Ltd., *NSE Historical Data: Order and Trade Specification*, version 1.19, 3 August 2026.
-
-[42] National Stock Exchange of India, revision of tick sizes in the capital market segment, effective 15 April 2025.
+[14] NSE Data & Analytics Ltd., *NSE Historical Data: Order and Trade Specification*, version 1.19, 3 August 2026.
