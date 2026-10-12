@@ -1,1 +1,14 @@
 .vscode
+
+# Downloaded exchange data and runtime output: never commit (NSE data is not ours to redistribute)
+data/
+logs/
+
+# Build output and dependencies
+engine/build/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/

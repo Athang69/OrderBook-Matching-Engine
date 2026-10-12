@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Builds whatever is missing and starts the whole simulator.
+# Open http://localhost:8000 once it says "Uvicorn running".
+#
+#   scripts/run.sh            start on port 8000
+#   PORT=9000 scripts/run.sh  start on another port
+set -euo pipefail
+cd "$(dirname "$0")/.."
+PORT="${PORT:-8000}"
+
+echo "[1/4] Matching engine (C++)"
+[ -f engine/build/build.ninja ] || [ -f engine/build/Makefile ] || cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build engine/build --target ob_engine | tail -1
+
+echo "[2/4] Backend dependencies (Python)"
+[ -x .venv/bin/python ] || python3 -m venv .venv
+.venv/bin/python -c "import fastapi, uvicorn" 2>/dev/null || .venv/bin/pip install --quiet -r backend/requirements.txt
+
+echo "[3/4] Previous-day NSE data"
+python3 scripts/fetch_nse_data.py || {
+  ls data/nse/sec_bhavdata_full_*.csv >/dev/null 2>&1 || { echo "No NSE data available. Connect to the internet and run again."; exit 1; }
+  echo "Could not download; using the data already in data/nse."
+}
+
+echo "[4/4] Frontend (React)"
+[ -d frontend/node_modules ] || (cd frontend && npm install --no-audit --no-fund)
+if [ ! -f frontend/dist/index.html ] || [ -n "$(find frontend/src frontend/index.html -newer frontend/dist/index.html -print -quit)" ]; then
+  (cd frontend && npm run build | tail -2)
+fi
+
+echo "Starting the simulator on http://localhost:${PORT}"
+exec .venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port "$PORT"
