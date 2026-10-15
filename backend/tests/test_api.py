@@ -23,6 +23,13 @@ def test_instruments_come_from_nse_data(client):
         assert inst["lower_band"] % inst["tick"] == 0 and inst["upper_band"] % inst["tick"] == 0
 
 
+def test_instruments_have_company_names_and_histories(client):
+    instruments = client.get("/v1/market/instruments").json()
+    assert next(i for i in instruments if i["symbol"] == "TCS")["company"] == "Tata Consultancy Services"
+    histories = client.get("/v1/market/histories").json()
+    assert set(histories) == set(config.SYMBOLS)
+
+
 def test_place_query_and_cancel_an_order(client):
     inst = client.get("/v1/market/instruments").json()[0]
     placed = client.post("/v1/orders", json={"symbol": inst["symbol"], "side": "BUY", "type": "LIMIT",

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { Instrument, MarketState, SimStatus, Trade } from "./api";
+import type { Instrument, MarketState, SimStatus, Trade } from "../api/types";
 
 const MAX_TAPE = 40;
 

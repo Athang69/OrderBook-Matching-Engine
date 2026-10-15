@@ -22,6 +22,12 @@ export function signedMoney(paise: number): string {
   return (paise > 0 ? "+₹" : "−₹") + price2.format(Math.abs(paise) / 100);
 }
 
+/** A price change with an explicit sign: "+1.40", "\u22121.80". */
+export function signedPrice(paise: number): string {
+  if (paise === 0) return "0.00";
+  return (paise > 0 ? "+" : "\u2212") + price2.format(Math.abs(paise) / 100);
+}
+
 export function qty(value: number): string {
   return whole.format(value);
 }
@@ -39,6 +45,21 @@ export function direction(value: number): "up" | "down" | "flat" {
 
 export function clock(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleTimeString("en-IN", { hour12: false });
+}
+
+/** "just now", "12 min ago", "3 h ago", "2 days ago". */
+export function timeAgo(epochSeconds: number, now = Date.now() / 1000): string {
+  const minutes = Math.floor((now - epochSeconds) / 60);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "1 day ago" : `${days} days ago`;
+}
+
+export function dateTime(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 export function longDate(iso: string): string {

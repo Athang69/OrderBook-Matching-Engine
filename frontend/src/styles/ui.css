@@ -1,0 +1,497 @@
+/* ---- buttons ---- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--surface-3);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.button.small {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.button.block {
+  width: 100%;
+  height: 42px;
+}
+
+.button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.button.ghost {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.button.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  filter: none;
+}
+
+.button.buy {
+  background: var(--up-solid);
+  color: #fff;
+}
+
+.button.sell {
+  background: var(--down-solid);
+  color: #fff;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+}
+
+.icon-button:hover {
+  background: var(--surface-2);
+}
+
+.icon-button svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.link-button {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: 13px;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+/* ---- segmented control ---- */
+
+.segmented {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.segmented button {
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.segmented button.on {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.segmented button.on.buy {
+  background: var(--up-solid);
+  color: #fff;
+}
+
+.segmented button.on.sell {
+  background: var(--down-solid);
+  color: #fff;
+}
+
+/* ---- chips and badges ---- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.chip.quiet {
+  border-color: transparent;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge.up {
+  color: var(--up);
+  background: var(--up-tint);
+}
+
+.badge.down {
+  color: var(--down);
+  background: var(--down-tint);
+}
+
+.badge.neutral {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+/* ---- status dot ---- */
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex: none;
+}
+
+.status-dot.live {
+  background: var(--up);
+  box-shadow: 0 0 0 3px var(--up-tint);
+}
+
+.status-dot.paused {
+  background: var(--warn);
+}
+
+.status-dot.off {
+  background: var(--down);
+}
+
+/* ---- sparkline ---- */
+
+.sparkline {
+  display: block;
+  flex: none;
+}
+
+.sparkline-base {
+  stroke: var(--faint);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.sparkline-line {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.sparkline-area {
+  stroke: none;
+  opacity: 0.16;
+}
+
+.sparkline.up .sparkline-line {
+  stroke: var(--up);
+}
+
+.sparkline.up .sparkline-area {
+  fill: var(--up);
+}
+
+.sparkline.down .sparkline-line {
+  stroke: var(--down);
+}
+
+.sparkline.down .sparkline-area {
+  fill: var(--down);
+}
+
+/* ---- signal bar (-1 to +1) and confidence meter ---- */
+
+.signal-bar {
+  position: relative;
+  display: inline-block;
+  width: 72px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  vertical-align: middle;
+}
+
+.signal-bar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 12px;
+  background: var(--border-strong);
+}
+
+.signal-bar .fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+}
+
+.signal-bar .fill.up {
+  background: var(--up);
+}
+
+.signal-bar .fill.down {
+  background: var(--down);
+}
+
+.confidence-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.confidence-meter .track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.confidence-meter .fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.confidence-meter i {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  background: var(--text);
+}
+
+/* ---- tooltip ---- */
+
+.tooltip {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ---- modal ---- */
+
+.modal {
+  width: min(1180px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.modal::backdrop {
+  background: rgba(4, 6, 9, 0.66);
+  backdrop-filter: blur(2px);
+}
+
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.modal-head h2 {
+  font-size: 19px;
+}
+
+.modal-head p {
+  max-width: 820px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal-body {
+  padding: 18px 22px 22px;
+}
+
+.modal-body h3 {
+  margin: 24px 0 10px;
+  font-size: 15px;
+}
+
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--surface-3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+/* ---- tables ---- */
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.data-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.data-table th.num,
+.data-table td.num {
+  text-align: right;
+}
+
+.data-table caption {
+  padding: 4px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.data-table .why {
+  min-width: 240px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.data-table .row-up td:first-child {
+  box-shadow: inset 3px 0 0 var(--up);
+}
+
+.data-table .row-down td:first-child {
+  box-shadow: inset 3px 0 0 var(--down);
+}
+
+/* ---- forms ---- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field input,
+.unit-input input {
+  height: 38px;
+  width: 100%;
+  padding: 0 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field input:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.problems {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--down);
+  background: var(--down-tint);
+}
+
+.problems li + li {
+  margin-top: 4px;
+}

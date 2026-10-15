@@ -1,0 +1,263 @@
+.quote-header .eyebrow {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quote-header h1 {
+  margin: 4px 0 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.quote-header h1 .muted {
+  font-weight: 600;
+}
+
+.quote-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.quote-price {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.quote-price .big {
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.quote-price .change {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.as-of {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quote-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.quote-actions .button {
+  min-width: 96px;
+}
+
+/* ---- chart ---- */
+
+.chart-card {
+  padding: 14px 16px 12px;
+}
+
+.range-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.range-tabs button {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.range-tabs button:hover {
+  background: var(--surface-2);
+}
+
+.range-tabs button.on {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.chart-frame {
+  position: relative;
+}
+
+.chart-frame svg {
+  display: block;
+}
+
+.chart-frame .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-frame .axis {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-frame .line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-frame .line.up {
+  stroke: var(--up);
+}
+
+.chart-frame .line.down {
+  stroke: var(--down);
+}
+
+.chart-frame .area {
+  stroke: none;
+}
+
+.stop-up {
+  stop-color: var(--up);
+}
+
+.stop-down {
+  stop-color: var(--down);
+}
+
+.chart-frame .baseline {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.chart-frame .crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.chart-frame .marker {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.chart-frame .marker.up {
+  fill: var(--up);
+}
+
+.chart-frame .marker.down {
+  fill: var(--down);
+}
+
+.price-tag rect {
+  fill: var(--surface-3);
+}
+
+.price-tag text {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-tag.up rect {
+  fill: var(--up-solid);
+}
+
+.price-tag.down rect {
+  fill: var(--down-solid);
+}
+
+.price-tag.up text,
+.price-tag.down text {
+  fill: #fff;
+}
+
+.legend-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.baseline-key {
+  display: inline-block;
+  width: 18px;
+  border-top: 1px dashed var(--muted);
+}
+
+/* ---- key statistics ---- */
+
+.key-stats dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 28px;
+}
+
+.key-stats dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px dotted var(--border-strong);
+}
+
+.key-stats dt {
+  color: var(--text-2);
+}
+
+.key-stats dd {
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .key-stats dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .key-stats dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .quote-price .big {
+    font-size: 32px;
+  }
+}
+
+/* ---- other stocks ---- */
+
+.other-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.other-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+}
+
+.other-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-import type { Order, Portfolio } from "../api";
-import { clock, direction, money, price, qty, reasonText, signedMoney } from "../format";
+import type { Order, Portfolio } from "../../api/types";
+import { clock, direction, money, price, qty, reasonText, signedMoney } from "../../lib/format";
 
 interface Props {
   portfolio: Portfolio | null;
@@ -28,7 +28,9 @@ export function AccountTabs({ portfolio, orders, onCancel, onSquareOff }: Props)
   ];
 
   return (
-    <section className="panel account">
+    <section className="section" id="account" aria-labelledby="account-title">
+      <h2 id="account-title" className="section-title">Your portfolio</h2>
+      <div className="card account">
       <div className="tabs" role="tablist">
         {tabs.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>
@@ -42,6 +44,7 @@ export function AccountTabs({ portfolio, orders, onCancel, onSquareOff }: Props)
         {tab === "history" && <OrdersTable orders={orders} empty="No orders yet." />}
         {tab === "funds" && <Funds portfolio={portfolio} />}
       </div>
+      </div>
     </section>
   );
 }
@@ -53,7 +56,7 @@ function Positions({ portfolio, onSquareOff }: { portfolio: Portfolio | null; on
   return (
     <>
       {portfolio.holdings.length > 0 && (
-        <table>
+        <table className="data-table">
           <caption>Delivery holdings</caption>
           <thead>
             <tr><th>Stock</th><th className="num">Quantity</th><th className="num">Average price</th><th className="num">Last price</th><th className="num">Value</th><th className="num">Profit / loss</th></tr>
@@ -74,7 +77,7 @@ function Positions({ portfolio, onSquareOff }: { portfolio: Portfolio | null; on
       )}
       {portfolio.intraday.length > 0 && (
         <>
-          <table>
+          <table className="data-table">
             <caption>Intraday positions</caption>
             <thead>
               <tr><th>Stock</th><th className="num">Position</th><th className="num">Average price</th><th className="num">Last price</th><th className="num">Margin blocked</th><th className="num">Profit / loss</th></tr>
@@ -92,7 +95,7 @@ function Positions({ portfolio, onSquareOff }: { portfolio: Portfolio | null; on
               ))}
             </tbody>
           </table>
-          <button className="ghost" onClick={onSquareOff}>Square off all intraday positions</button>
+          <button className="button ghost" onClick={onSquareOff}>Square off all intraday positions</button>
         </>
       )}
     </>
@@ -102,7 +105,7 @@ function Positions({ portfolio, onSquareOff }: { portfolio: Portfolio | null; on
 function OrdersTable({ orders, onCancel, empty }: { orders: Order[]; onCancel?: (id: number) => void; empty: string }) {
   if (orders.length === 0) return <p className="empty">{empty}</p>;
   return (
-    <table>
+    <table className="data-table">
       <thead>
         <tr>
           <th className="num">Time</th><th>Stock</th><th>Side</th><th>Product</th><th>Type</th><th className="num">Quantity</th><th className="num">Filled</th>
@@ -125,7 +128,7 @@ function OrdersTable({ orders, onCancel, empty }: { orders: Order[]; onCancel?: 
               {STATUS_TEXT[o.status]}
               {o.status === "REJECTED" && o.reason ? <span className="muted">: {reasonText(o.reason)}</span> : null}
             </td>
-            {onCancel && <td><button className="ghost small" onClick={() => onCancel(o.id)}>Cancel</button></td>}
+            {onCancel && <td><button className="button ghost small" onClick={() => onCancel(o.id)}>Cancel</button></td>}
           </tr>
         ))}
       </tbody>
@@ -146,7 +149,7 @@ function Funds({ portfolio }: { portfolio: Portfolio | null }) {
     ["Account value", money(portfolio.equity), "Cash plus holdings plus open intraday profit or loss."],
   ];
   return (
-    <table className="funds-table">
+    <table className="data-table funds-table">
       <tbody>
         {rows.map(([label, value, note]) => (
           <tr key={label}>

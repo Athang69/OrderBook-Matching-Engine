@@ -29,3 +29,18 @@ SESSION_SECONDS = 900
 BOT_USERS = ["mm1", "mm2", "retail", "taker"]
 BOT_CASH = 500_00_00_000 * 100  # Rs 500 crore each
 BOT_SHARES = 5_000_000
+
+# News: company names for the search, and the words a headline must contain to count as
+# news about that stock (matched as whole words, ignoring case).
+COMPANIES = {
+    "RELIANCE": ("Reliance Industries", ["Reliance", "RIL"]),
+    "TCS": ("Tata Consultancy Services", ["TCS", "Tata Consultancy"]),
+    "HDFCBANK": ("HDFC Bank", ["HDFC Bank"]),
+    "INFY": ("Infosys", ["Infosys", "Infy"]),
+    "ICICIBANK": ("ICICI Bank", ["ICICI Bank"]),
+    "SBIN": ("State Bank of India", ["SBI", "State Bank of India"]),
+    "ITC": ("ITC", ["ITC"]),
+    "LT": ("Larsen & Toubro", ["Larsen", "L&T"]),
+}
+NEWS_PER_STOCK = 3
+NEWS_CACHE_SECONDS = 600  # ask Google News for a stock at most once every 10 minutes

@@ -197,7 +197,96 @@ After every order, the backend stores the stock's best five levels and any trade
 
 Account data (orders, positions, cash) is not pushed; the page asks for it every 1.5 seconds and immediately after placing or cancelling an order.
 
-## 9. How this maps to the system design
+## 9. Recommendation system
+
+Clicking **Delivery** in the order form opens a pop-up where you tick stocks, choose a confidence percentage and an amount, and ask which to buy.
+
+```
+ Pop-up (React)  --POST /v1/recommendations-->  Backend: validate, take current prices
+                                                     |
+                                                     v
+                                         recomendation_system.recommend()
+                                           1. price history (Yahoo Finance, cached daily)
+                                           2. Monte Carlo + SLSQP (the original method)
+                                           3. confidence from 200 re-runs on reshuffled history
+                                           4. Buy if confidence >= what you asked
+                                           5. split the money, whole shares, Value at Risk
+                                                     |
+ Pop-up shows decisions, chart, numbers  <-----------+
+ "Buy recommended stocks" --> normal POST /v1/orders (market, delivery), same risk checks
+```
+
+| Decision | Why |
+|---|---|
+| The recommender is its own package, called as a function | It can also run alone from a terminal, and its tests need no simulator. |
+| The endpoint is a plain function that FastAPI runs on a worker thread | A run takes under a second of computing; the market keeps trading meanwhile. |
+| One run at a time | It is the only heavy computation in the backend; a second request gets a clear "already running" answer. |
+| Its libraries load on first use | The trading part still starts even if those libraries are missing. |
+| Fixed random seed | The same request on the same day gives the same answer, which makes it easy to check. |
+| Price history cached for the day | Yahoo Finance limits how often it can be asked; repeat runs are instant. |
+| Quantities use the simulator's current price | The shares are bought in the simulator, so its price is the one that matters. |
+| Buying goes through the normal order path | The purchase passes the same risk checks as any other order. |
+
+Validation happens twice: the pop-up checks before sending (at least two stocks, confidence 50 to 99, an amount no larger than your available cash), and the server checks the same rules again along with unknown and duplicate stocks.
+
+The confidence measure, the changes from the original script and the terminal command are described in `recomendation_system/README.md`.
+
+### News headlines
+
+The order form's stock, and every stock in a recommendation, show their three latest news headlines so you can read them before deciding. They are shown for you to read; the recommendation does not use them.
+
+| Step | How |
+|---|---|
+| Source | Google News search as an RSS feed (no key needed): the company's name, past seven days |
+| Relevance | A headline must name the company, as a whole word (for example "Reliance" or "RIL"; "L&T" or "Larsen") |
+| Clean-up | Quote and price pages are dropped, repeats of the same story are dropped, the newest three are kept |
+| Caching | Each stock is fetched at most once every ten minutes; the page refreshes every five minutes or on demand |
+| Failures | If a refresh fails, the last headlines are shown with a note; a failure is not cached, so the next request tries again |
+| Safety | The feed is parsed with a hardened XML parser, links must be http(s), and they open in a new tab |
+
+### Intraday recommendations
+
+Clicking **Intraday** in the order form opens a pop-up with live signals for the ticked stocks. It suits a minutes-long horizon, so it uses the simulator's own last few minutes of trading, never downloaded history.
+
+| Signal | What it measures | Range |
+|---|---|---|
+| Momentum | The last minute's price change, divided by the stock's normal one-second swings | -1 to +1 |
+| Price vs VWAP | The last price above or below the session's volume-weighted average price | -1 to +1 |
+| Order book | Quantity waiting to buy against quantity waiting to sell, best five levels | -1 to +1 |
+| Trade flow | Shares bought by buyers who crossed the spread against shares sold by sellers who did, last five minutes | -1 to +1 |
+
+The score is the weighted average (30%, 20%, 25%, 25%). Its sign is the direction; its size is the confidence. A stock with confidence at or above the user's level is a **Buy** or a **Sell short**; otherwise it is **No trade**. A stock with under 20 seconds of prices shows **Waiting**. Entry is the best offer for a buy or the best bid for a short sale. The stop-loss sits 1.5 typical 15-minute moves away and the target twice as far. The margin is split by confidence, and positions can be five times the margin.
+
+How it is kept fast:
+
+| Step | How |
+|---|---|
+| Volatility | Updated as each one-second price sample arrives, with running sums (constant time), not recalculated per request |
+| Request | Copies the latest numbers under one lock, then does a few dozen arithmetic steps per stock |
+| Endpoint | `async`, so no worker-thread hop; a cheap cash check; the reply encoded straight to JSON |
+| Python scheduling | The interpreter's thread switch interval is lowered from 5 ms to 0.5 ms so the robot traders' thread cannot hold up a request |
+| Browser | Asks once a second, skips a tick if the last answer has not arrived, and shows server time and round trip |
+
+Measured with all eight stocks while the robot traders were running: a median of 0.64 ms on the server and about 3 ms for the whole HTTP round trip. Before these changes it was 1.2 ms and 3.7 ms. The reply includes `timing`, which splits the server time into checks, data copy and signal calculation.
+
+## 10. Frontend structure
+
+| Folder | Contents |
+|---|---|
+| `api/` | `types.ts` (every API shape) and `client.ts` (every call) |
+| `hooks/` | Live market data over the WebSocket, account polling, price history for charts, news, intraday polling, theme, the active page section |
+| `components/layout/` | Top bar with stock search, the stock strip with sparklines, the section menu, the footer |
+| `components/quote/` | Quote header, price chart with range tabs, key statistics, other stocks |
+| `components/market/` | Order book with buy and sell pressure, time and sales, top movers |
+| `components/trading/` | Order form, account summary, portfolio tabs |
+| `components/news/` | Headline list, the page's news section, news inside recommendations |
+| `components/recommendations/` | The recommendations section, the delivery and intraday pop-ups, the risk-against-return chart |
+| `components/ui/` | Small shared pieces: modal, segmented control, sparkline, signal bar, confidence meter |
+| `styles/` | `tokens.css` (colours, sizes, dark and light themes), `base.css`, and one stylesheet per area |
+
+The page is dark by default, with a light theme switch. It reflows from three columns to two at 1,279 px and to one at 1,023 px. Charts carry text alternatives, buy and sell are shown with words as well as colours, and the pop-ups are native dialogs.
+
+## 11. How this maps to the system design
 
 | Design item | In this prototype |
 |---|---|
@@ -215,7 +304,7 @@ Account data (orders, positions, cash) is not pushed; the page asks for it every
 | Message queue, cache, databases | Not used; everything is in memory |
 | Stop orders, market-wide halts, login | Not built |
 
-## 10. Measured performance
+## 12. Measured performance
 
 Measured on the development laptop. Run `./engine/build/ob_bench` to reproduce the first row.
 
@@ -227,7 +316,7 @@ Measured on the development laptop. Run `./engine/build/ob_bench` to reproduce t
 
 The engine is roughly a thousand times faster than the layer around it. In this prototype the limit is Python and the pipe, not the matching.
 
-## 11. Testing
+## 13. Testing
 
 | Test | What it checks |
 |---|---|
@@ -235,12 +324,18 @@ The engine is roughly a thousand times faster than the layer around it. In this 
 | `engine/tests` random test | 60,000 random operations compared, trade by trade and level by level, against a slow and simple reference book |
 | `backend/tests/test_exchange.py` | Reservation and release, both sides of a trade, every rejection, partial fills, intraday margin, short selling, square-off |
 | `backend/tests/test_api.py` | The running system over HTTP and WebSocket |
+| `backend/tests/test_recommendations_api.py` | The recommendation endpoint and its validation |
+| `recomendation_system/tests` | Optimiser results, confidence, decisions, budget split, Value at Risk, invalid requests |
+| `backend/tests/test_news.py` | Headline filtering, repeats, unsafe links, caching, failures, the news endpoint |
+| `backend/tests/test_intraday.py` | Signal directions, waiting for data, levels on the tick and inside the band, sizing within margin, rolling volatility, speed, the endpoint |
 
-## 12. Known limits
+## 14. Known limits
 
 - State is not saved; a restart starts fresh.
 - One demo user and no login.
 - A user's own buy and sell orders can trade with each other; a real exchange prevents this.
 - Tick size is taken from the previous close. NSE fixes it monthly, so a stock near a slab boundary may differ.
 - Intraday positions are not closed automatically at the end of the session; use the square-off button.
-- The portfolio suggestion panel is a placeholder until the FinBERT and SLSQP module is connected.
+- Recommendations rely on Yahoo Finance for price history; without internet, only a stock already cached can be used.
+- News relevance is decided by the company's name, so a headline about a similarly named company can occasionally appear.
+- Intraday stop-losses and targets are suggestions; the simulator has no stop orders, so open positions must be watched or squared off.

@@ -1,0 +1,62 @@
+/* Design tokens. Dark is the default; [data-theme="light"] switches the palette. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0d10;
+  --bg-elevated: #101317;
+  --surface: #14181d;
+  --surface-2: #1b2027;
+  --surface-3: #242b33;
+  --border: #252b33;
+  --border-strong: #353d48;
+  --text: #f1f3f6;
+  --text-2: #c7cdd5;
+  --muted: #8b95a1;
+  --faint: #5d6772;
+  --link: #8ab4ff;
+  --accent: #4c8dff;
+  --accent-strong: #2f74f5;
+  --accent-tint: rgba(76, 141, 255, 0.14);
+  --on-accent: #ffffff;
+  --up: #22c37b;
+  --down: #ff5d5d;
+  --up-tint: rgba(34, 195, 123, 0.14);
+  --down-tint: rgba(255, 93, 93, 0.14);
+  --up-solid: #14a866;
+  --down-solid: #e5484d;
+  --warn: #f2b84b;
+  --best: #ff8a4c;
+  --safest: #9d8cff;
+  --shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --header-h: 60px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-3: #e5e8ec;
+  --border: #e3e6ea;
+  --border-strong: #cfd4da;
+  --text: #11151a;
+  --text-2: #2f3640;
+  --muted: #5d6773;
+  --faint: #8d96a1;
+  --link: #1f5fd1;
+  --accent: #2f74f5;
+  --accent-strong: #1f5fd1;
+  --accent-tint: rgba(47, 116, 245, 0.1);
+  --up: #0a8a50;
+  --down: #d63a3a;
+  --up-tint: rgba(10, 138, 80, 0.1);
+  --down-tint: rgba(214, 58, 58, 0.09);
+  --up-solid: #0a8a50;
+  --down-solid: #d63a3a;
+  --best: #e5602b;
+  --safest: #6250d6;
+  --shadow: 0 16px 48px rgba(16, 24, 40, 0.16);
+}

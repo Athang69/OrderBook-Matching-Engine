@@ -1,52 +1,50 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { api, type Order, type Portfolio, type Trade } from "./api";
-import { AccountTabs } from "./components/AccountTabs";
-import { Header } from "./components/Header";
-import { OrderBook } from "./components/OrderBook";
-import { OrderTicket } from "./components/OrderTicket";
-import { PriceChart } from "./components/PriceChart";
-import { SuggestionSlot } from "./components/SuggestionSlot";
-import { SymbolSummary } from "./components/SymbolSummary";
-import { TradeTape } from "./components/TradeTape";
-import { Watchlist } from "./components/Watchlist";
-import { useMarketData } from "./useMarketData";
+import { api } from "./api/client";
+import type { Recommendation, Side, Trade } from "./api/types";
+import { Footer } from "./components/layout/Footer";
+import { MarketStrip } from "./components/layout/MarketStrip";
+import { SectionNav } from "./components/layout/SectionNav";
+import { TopBar } from "./components/layout/TopBar";
+import { Movers } from "./components/market/Movers";
+import { MarketDepth } from "./components/market/OrderBook";
+import { NewsPanel } from "./components/news/News";
+import { KeyStats } from "./components/quote/KeyStats";
+import { OtherStocks } from "./components/quote/OtherStocks";
+import { PriceChart } from "./components/quote/PriceChart";
+import { QuoteHeader } from "./components/quote/QuoteHeader";
+import { DeliveryModal } from "./components/recommendations/DeliveryModal";
+import { IntradayModal } from "./components/recommendations/IntradayModal";
+import { RecommendationsPanel } from "./components/recommendations/RecommendationsPanel";
+import { AccountSummary } from "./components/trading/AccountSummary";
+import { AccountTabs } from "./components/trading/AccountTabs";
+import { OrderTicket } from "./components/trading/OrderTicket";
+import { useAccount } from "./hooks/useAccount";
+import { useMarketData } from "./hooks/useMarketData";
+import { usePriceHistory } from "./hooks/usePriceHistory";
+import { useTheme } from "./hooks/useTheme";
 
-const ACCOUNT_REFRESH_MS = 1500;
+type Dialog = "delivery" | "intraday" | null;
 
 export function App() {
   const { connected, instruments, market, tape, sim } = useMarketData();
+  const history = usePriceHistory(market);
+  const { portfolio, orders, refresh } = useAccount(sim?.demo_user);
+  const [theme, toggleTheme] = useTheme();
   const [selected, setSelected] = useState("");
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [earlierTrades, setEarlierTrades] = useState<Trade[]>([]);
+  const [side, setSide] = useState<Side>("BUY");
   const [pickedPrice, setPickedPrice] = useState<{ price: number; at: number } | null>(null);
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const [lastDelivery, setLastDelivery] = useState<Recommendation | null>(null);
+  const [earlierTrades, setEarlierTrades] = useState<Trade[]>([]);
   const [notice, setNotice] = useState("");
+  const ticket = useRef<HTMLElement>(null);
 
-  const user = sim?.demo_user;
   const symbol = selected || instruments[0]?.symbol || "";
   const instrument = instruments.find((i) => i.symbol === symbol);
   const state = market[symbol];
 
-  // Orders and balances are fetched over REST; market data arrives over the WebSocket.
-  const refreshAccount = useCallback(async () => {
-    if (!user) return;
-    try {
-      const [nextPortfolio, nextOrders] = await Promise.all([api.portfolio(user), api.orders()]);
-      setPortfolio(nextPortfolio);
-      setOrders(nextOrders);
-    } catch {
-      // The header already shows the connection state; keep the last known values.
-    }
-  }, [user]);
-
-  useEffect(() => {
-    refreshAccount();
-    const timer = window.setInterval(refreshAccount, ACCOUNT_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [refreshAccount]);
-
-  // Trades that happened before this page connected.
+  // Trades from before this page connected; newer ones arrive over the WebSocket.
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
@@ -64,7 +62,13 @@ export function App() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Something went wrong.");
     }
-    refreshAccount();
+    refresh();
+  };
+
+  const startTrade = (next: Side) => {
+    setSide(next);
+    ticket.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    ticket.current?.focus({ preventScroll: true });
   };
 
   if (!instrument || !state) {
@@ -74,33 +78,45 @@ export function App() {
   const live = tape[symbol] ?? [];
   const seen = new Set(live.map((t) => t.id));
   const trades = [...live, ...earlierTrades.filter((t) => !seen.has(t.id))].slice(0, 40);
+  const marginDivisor = sim?.margin_divisor ?? 5;
 
   return (
-    <div className="app">
-      <Header connected={connected} sim={sim} portfolio={portfolio} onToggleBots={(enabled) => act(() => api.setBots(enabled))} />
-      {notice && <p className="notice" role="alert">{notice}</p>}
-      <main>
-        <Watchlist instruments={instruments} market={market} selected={symbol} onSelect={setSelected} />
-        <div className="centre">
-          <SymbolSummary instrument={instrument} state={state} />
-          <PriceChart symbol={symbol} ltp={state.ltp} prevClose={instrument.prev_close} />
-          <div className="book-and-tape">
-            <OrderBook instrument={instrument} state={state} onPickPrice={(p) => setPickedPrice({ price: p, at: Date.now() })} />
-            <TradeTape trades={trades} />
-          </div>
-        </div>
-        <div className="side">
-          <OrderTicket instrument={instrument} state={state} portfolio={portfolio} marginDivisor={sim?.margin_divisor ?? 5}
-            pickedPrice={pickedPrice} onPlaced={refreshAccount} />
-          <SuggestionSlot symbol={symbol} />
-        </div>
-      </main>
-      <AccountTabs portfolio={portfolio} orders={orders} onCancel={(id) => act(() => api.cancelOrder(id))}
-        onSquareOff={() => user && act(() => api.squareOff(user))} />
-      <footer className="muted">
-        Simulator for study. Prices follow the previous day's NSE data; the orders are generated by robot traders.
-        Nothing here is investment advice.
-      </footer>
-    </div>
+    <>
+      <a className="skip-link" href="#main">Skip to content</a>
+      <TopBar instruments={instruments} market={market} connected={connected} sim={sim} portfolio={portfolio}
+        theme={theme} onToggleTheme={toggleTheme} onToggleBots={(enabled) => act(() => api.setBots(enabled))} onSelect={setSelected} />
+      <MarketStrip instruments={instruments} market={market} history={history} selected={symbol} onSelect={setSelected} />
+      {notice && <p className="notice container" role="alert">{notice}</p>}
+
+      <div className="container page">
+        <SectionNav />
+        <main id="main" className="main-col">
+          <QuoteHeader instrument={instrument} state={state} sim={sim} onTrade={startTrade} />
+          <PriceChart symbol={symbol} points={history[symbol] ?? []} prevClose={instrument.prev_close} />
+          <KeyStats instrument={instrument} state={state} />
+          <MarketDepth instrument={instrument} state={state} trades={trades} onPickPrice={(p) => setPickedPrice({ price: p, at: Date.now() })} />
+          <NewsPanel symbol={symbol} company={instrument.company} />
+          <RecommendationsPanel instruments={instruments} portfolio={portfolio} lastDelivery={lastDelivery}
+            onOpenDelivery={() => setDialog("delivery")} onOpenIntraday={() => setDialog("intraday")} />
+          <AccountTabs portfolio={portfolio} orders={orders} onCancel={(id) => act(() => api.cancelOrder(id))}
+            onSquareOff={() => sim && act(() => api.squareOff(sim.demo_user))} />
+          <OtherStocks instruments={instruments} market={market} selected={symbol} onSelect={setSelected} />
+        </main>
+        <aside className="rail" aria-label="Trade and account">
+          <OrderTicket ref={ticket} instrument={instrument} state={state} portfolio={portfolio} marginDivisor={marginDivisor}
+            side={side} onSideChange={setSide} pickedPrice={pickedPrice} onPlaced={refresh}
+            onDeliveryClick={() => setDialog("delivery")} onIntradayClick={() => setDialog("intraday")} />
+          <AccountSummary portfolio={portfolio} />
+          <Movers instruments={instruments} market={market} history={history} onSelect={setSelected} />
+        </aside>
+      </div>
+
+      <Footer dataDate={instrument.data_date} />
+
+      <DeliveryModal open={dialog === "delivery"} onClose={() => setDialog(null)} instruments={instruments} market={market}
+        portfolio={portfolio} preselect={symbol} onOrdersPlaced={refresh} onResult={setLastDelivery} />
+      <IntradayModal open={dialog === "intraday"} onClose={() => setDialog(null)} instruments={instruments} market={market}
+        portfolio={portfolio} preselect={symbol} marginDivisor={marginDivisor} onOrdersPlaced={refresh} />
+    </>
   );
 }

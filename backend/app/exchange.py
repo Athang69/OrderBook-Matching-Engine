@@ -85,6 +85,11 @@ class Exchange:
     def has_account(self, user_id: str) -> bool:
         return user_id in self._accounts
 
+    def available(self, user_id: str) -> int:
+        """Available cash only; much cheaper than a full portfolio valuation."""
+        with self._lock:
+            return self._accounts[user_id].available(self._margin_divisor)
+
     # ---- orders ----
 
     def place_order(self, user_id: str, symbol: str, side: str, order_type: str, product: str, qty: int,

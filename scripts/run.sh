@@ -12,9 +12,10 @@ echo "[1/4] Matching engine (C++)"
 [ -f engine/build/build.ninja ] || [ -f engine/build/Makefile ] || cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build engine/build --target ob_engine | tail -1
 
-echo "[2/4] Backend dependencies (Python)"
+echo "[2/4] Backend and recommendation system dependencies (Python)"
 [ -x .venv/bin/python ] || python3 -m venv .venv
-.venv/bin/python -c "import fastapi, uvicorn" 2>/dev/null || .venv/bin/pip install --quiet -r backend/requirements.txt
+.venv/bin/python -c "import fastapi, uvicorn, numpy, pandas, scipy, yfinance" 2>/dev/null ||
+  .venv/bin/pip install --quiet -r backend/requirements.txt -r recomendation_system/requirements.txt
 
 echo "[3/4] Previous-day NSE data"
 python3 scripts/fetch_nse_data.py || {

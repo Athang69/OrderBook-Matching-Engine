@@ -4,6 +4,7 @@ import time
 from collections import deque
 
 from .instruments import Instrument
+from .intraday import MOMENTUM_SECONDS, RollingVolatility
 
 
 class MarketData:
@@ -18,6 +19,7 @@ class MarketData:
                 "high": None,
                 "low": None,
                 "volume": 0,
+                "turnover": 0,  # sum of price x quantity, for the volume-weighted average price
                 "trades": 0,
                 "bids": [],
                 "asks": [],
@@ -26,6 +28,7 @@ class MarketData:
         }
         self._tape: dict[str, deque] = {i.symbol: deque(maxlen=60) for i in instruments}
         self._history: dict[str, deque] = {i.symbol: deque(maxlen=1800) for i in instruments}
+        self._volatility = {i.symbol: RollingVolatility() for i in instruments}
         self._dirty: set[str] = set()
         self._new_trades: list[dict] = []
 
@@ -38,6 +41,7 @@ class MarketData:
             state["high"] = price if state["high"] is None else max(state["high"], price)
             state["low"] = price if state["low"] is None else min(state["low"], price)
             state["volume"] += trade["qty"]
+            state["turnover"] += price * trade["qty"]
             state["trades"] += 1
             self._tape[trade["symbol"]].appendleft(trade)
             self._new_trades.append(trade)
@@ -71,6 +75,31 @@ class MarketData:
         with self._lock:
             return [list(point) for point in self._history[symbol]]
 
+    def intraday_view(self, symbols: list[str], seconds: int) -> dict[str, dict]:
+        """What the intraday signals need, copied under one lock so it is consistent: last price,
+        VWAP, best five levels, recent trades (newest first), the rolling one-second volatility,
+        how many seconds of prices there are, and the price about a minute ago.
+
+        Nothing here loops over the price history except a short walk back of about a minute."""
+        now = time.time()
+        cutoff = now - seconds
+        with self._lock:
+            view = {}
+            for symbol in symbols:
+                state = self._state[symbol]
+                history = self._history[symbol]
+                view[symbol] = {
+                    "ltp": state["ltp"],
+                    "vwap": state["turnover"] / state["volume"] if state["volume"] else None,
+                    "bids": state["bids"],  # replaced, never changed in place, so sharing is safe
+                    "asks": state["asks"],
+                    "trades": [t for t in self._tape[symbol] if t["ts"] >= cutoff],
+                    "sigma": self._volatility[symbol].value(),
+                    "points": len(history),  # one price sample per second
+                    "reference": _point_before(history, now - MOMENTUM_SECONDS),
+                }
+            return view
+
     def sample_history(self) -> None:
         """Records one price point per symbol; called once a second for the price chart."""
         now = int(time.time())
@@ -78,6 +107,7 @@ class MarketData:
             for symbol, state in self._state.items():
                 if state["ltp"] is not None:
                     self._history[symbol].append((now, state["ltp"]))
+                    self._volatility[symbol].add(now, state["ltp"])
 
     def drain(self) -> tuple[dict[str, dict], list[dict]]:
         """Everything that changed since the last call, for the WebSocket broadcaster."""
@@ -87,3 +117,14 @@ class MarketData:
             self._dirty = set()
             self._new_trades = []
             return changed, trades
+
+
+def _point_before(history: deque, when: float) -> tuple[int, int] | None:
+    """The newest (time, price) at or before `when`, or the oldest one; None if there is no history.
+    Samples are one second apart, so this walks back about a minute at most."""
+    if not history:
+        return None
+    for i in range(len(history) - 1, -1, -1):
+        if history[i][0] <= when:
+            return history[i]
+    return history[0]

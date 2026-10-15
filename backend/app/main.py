@@ -12,25 +12,34 @@ REST (prices are integers in paise):
   GET    /v1/portfolio/{user_id}            cash, holdings, intraday positions, profit and loss
   POST   /v1/portfolio/{user_id}/squareoff  close all intraday positions
   GET    /v1/sim  and  POST /v1/sim/bots    simulator status; pause or resume robot traders
+  POST   /v1/recommendations                which of the chosen stocks to buy (recomendation_system)
+  POST   /v1/recommendations/intraday       buy, sell short or stay out, from live market data
+  GET    /v1/news?symbols=                  latest news headlines for each stock
 WebSocket:
   /v1/stream/marketdata                     book and trade updates, pushed four times a second
 """
 import asyncio
 import contextlib
+import json
+import sys
+import threading
+import time
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config
+from . import config, intraday
 from .audit import AuditLog
 from .bots import Bots
 from .engine_client import EngineClient
 from .exchange import Exchange
 from .instruments import load_instruments
 from .market_data import MarketData
+from .news import SOURCE as NEWS_SOURCE
+from .news import NewsService
 
 BROADCAST_SECONDS = 0.25
 
@@ -50,6 +59,9 @@ class Simulator:
         for bot in config.BOT_USERS:
             self.exchange.create_account(bot, config.BOT_CASH, is_bot=True, shares=config.BOT_SHARES)
         self.bots = Bots(self.exchange, self.market, self.instruments, config.SESSION_SECONDS)
+        companies = {s: config.COMPANIES.get(s, (s, [s])) for s in config.SYMBOLS}
+        self.news = NewsService(companies, config.NEWS_PER_STOCK, config.NEWS_CACHE_SECONDS)
+        self.intraday_rules = {i.symbol: intraday.StockRules(i.tick, i.lower_band, i.upper_band) for i in self.instruments}
         self.sockets: set[WebSocket] = set()
 
     def status(self) -> dict:
@@ -58,7 +70,8 @@ class Simulator:
 
     def instrument_list(self) -> list[dict]:
         snapshots = self.market.snapshots()
-        return [{**i.to_dict(), "market": snapshots[i.symbol]} for i in self.instruments]
+        return [{**i.to_dict(), "company": config.COMPANIES.get(i.symbol, (i.symbol, []))[0],
+                 "avg_trade_qty": i.avg_trade_qty, "market": snapshots[i.symbol]} for i in self.instruments]
 
     async def broadcast_forever(self) -> None:
         ticks = 0
@@ -85,6 +98,9 @@ class Simulator:
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Python lets one thread run at a time and switches every 5 ms by default. With the robot traders
+    # busy on their own thread, a request could wait up to that long. 0.5 ms keeps the API responsive.
+    sys.setswitchinterval(0.0005)
     sim = Simulator()
     app.state.sim = sim
     sim.bots.start()
@@ -131,6 +147,25 @@ class OrderRequest(BaseModel):
 
 class BotsRequest(BaseModel):
     enabled: bool
+
+
+class RecommendationRequest(BaseModel):
+    user_id: str = config.DEMO_USER
+    symbols: list[str] = Field(min_length=2, max_length=len(config.SYMBOLS),
+                               description="Stocks to choose between; at least two")
+    confidence: float = Field(ge=50, le=99, description="Percentage: how sure the system must be before saying buy")
+    budget: int = Field(gt=0, description="Amount to invest, in paise")
+
+
+class IntradayRequest(BaseModel):
+    user_id: str = config.DEMO_USER
+    symbols: list[str] = Field(min_length=1, max_length=len(config.SYMBOLS))
+    confidence: float = Field(ge=10, le=95, description="Percentage: how strong the signals must be")
+    budget: int = Field(gt=0, description="Margin money to use, in paise; positions can be 5 times this")
+
+
+# Only one recommendation runs at a time; it is the one heavy computation in the backend.
+_recommendation_running = threading.Lock()
 
 
 # ---- orders ----
@@ -190,6 +225,12 @@ def history(symbol: str) -> list[list]:
     return sim().market.history(require_symbol(symbol))
 
 
+@app.get("/v1/market/histories")
+def histories() -> dict[str, list[list]]:
+    """Price once a second for every stock, for the charts and sparklines in one request."""
+    return {i.symbol: sim().market.history(i.symbol) for i in sim().instruments}
+
+
 # ---- portfolio ----
 
 @app.get("/v1/portfolio/{user_id}")
@@ -200,6 +241,85 @@ def portfolio(user_id: str) -> dict:
 @app.post("/v1/portfolio/{user_id}/squareoff")
 def square_off(user_id: str) -> list[dict]:
     return [order.to_dict() for order in sim().exchange.square_off(require_user(user_id))]
+
+
+# ---- recommendations ----
+
+@app.post("/v1/recommendations")
+def recommendations(req: RecommendationRequest) -> dict:
+    """Runs the recommendation system on the chosen stocks.
+
+    A plain `def` endpoint, so FastAPI runs it on a worker thread and the market keeps trading meanwhile.
+    """
+    user_id = require_user(req.user_id)
+    symbols = [s.strip().upper() for s in req.symbols]
+    if len(set(symbols)) != len(symbols):
+        raise HTTPException(422, "Each stock can be selected only once.")
+    unknown = [s for s in symbols if s not in sim().by_symbol]
+    if unknown:
+        raise HTTPException(422, f"Unknown stock: {', '.join(unknown)}.")
+    available = sim().exchange.portfolio(user_id)["available"]
+    if req.budget > available:
+        raise HTTPException(422, f"The amount to invest (Rs {req.budget / 100:,.2f}) is more than your "
+                                 f"available cash (Rs {available / 100:,.2f}).")
+    try:
+        import recomendation_system as recommender  # heavy libraries load on first use only
+    except ImportError as err:
+        raise HTTPException(503, f"The recommendation system is not installed ({err.name} is missing). "
+                                 "Run scripts/run.sh to install it.") from None
+    if not _recommendation_running.acquire(blocking=False):
+        raise HTTPException(409, "A recommendation is already running. Wait for it to finish.")
+    try:
+        # The simulator's current prices decide how many shares the money buys.
+        last_prices = {s: sim().market.ltp(s) or sim().by_symbol[s].prev_close for s in symbols}
+        return recommender.recommend(symbols, req.confidence, req.budget, last_prices, loader=recommender.load_prices)
+    except recommender.RecommendationError as err:
+        raise HTTPException(422, str(err)) from None
+    finally:
+        _recommendation_running.release()
+
+
+@app.post("/v1/recommendations/intraday")
+async def intraday_recommendations(req: IntradayRequest) -> Response:
+    """Buy, sell short or stay out for each stock, from the last few minutes of the simulator's own data.
+
+    Kept fast on purpose: an `async` endpoint (the work is far too short to need a worker thread), a cheap
+    cash check instead of a full portfolio valuation, and the reply encoded directly as JSON. The reply's
+    `timing` says where the server's time went, in microseconds.
+    """
+    started = time.perf_counter_ns()
+    user_id = require_user(req.user_id)
+    symbols = [s.strip().upper() for s in req.symbols]
+    if len(set(symbols)) != len(symbols):
+        raise HTTPException(422, "Each stock can be selected only once.")
+    unknown = [s for s in symbols if s not in sim().by_symbol]
+    if unknown:
+        raise HTTPException(422, f"Unknown stock: {', '.join(unknown)}.")
+    available = sim().exchange.available(user_id)
+    if req.budget > available:
+        raise HTTPException(422, f"The margin to use (Rs {req.budget / 100:,.2f}) is more than your "
+                                 f"available cash (Rs {available / 100:,.2f}).")
+    checked = time.perf_counter_ns()
+    views = sim().market.intraday_view(symbols, intraday.WINDOW_SECONDS)
+    copied = time.perf_counter_ns()
+    result = intraday.recommend_intraday(views, sim().intraday_rules, req.confidence, req.budget,
+                                         config.MIS_MARGIN_DIVISOR, time.time())
+    done = time.perf_counter_ns()
+    result["timing"] = {"checks_us": (checked - started) // 1000, "snapshot_us": (copied - checked) // 1000,
+                        "signals_us": (done - copied) // 1000, "total_us": (done - started) // 1000}
+    return Response(json.dumps(result, separators=(",", ":")), media_type="application/json")
+
+
+# ---- news ----
+
+@app.get("/v1/news")
+def news(symbols: list[str] = Query(..., min_length=1, max_length=len(config.SYMBOLS))) -> dict:
+    """Latest headlines for each stock, e.g. /v1/news?symbols=RELIANCE&symbols=TCS."""
+    wanted = list(dict.fromkeys(s.strip().upper() for s in symbols))  # drop repeats, keep order
+    unknown = [s for s in wanted if s not in sim().by_symbol]
+    if unknown:
+        raise HTTPException(422, f"Unknown stock: {', '.join(unknown)}.")
+    return {"source": NEWS_SOURCE, "per_stock": config.NEWS_PER_STOCK, "stocks": sim().news.latest(wanted)}
 
 
 # ---- simulator ----
