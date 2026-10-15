@@ -77,21 +77,26 @@ def monte_carlo(annual_returns: np.ndarray, annual_cov: np.ndarray, risk_free_ra
 
 
 def selection_confidence(returns: np.ndarray, risk_free_rate: float, resamples: int, min_weight: float,
-                         rng: np.random.Generator) -> np.ndarray:
+                         rng: np.random.Generator, tilts: list[np.ndarray] | None = None) -> list[np.ndarray]:
     """For each stock, the share of resampled runs in which the maximum Sharpe portfolio gives it
-    at least `min_weight` of the money.
+    at least `min_weight` of the money; one result per entry in `tilts`.
 
     New: the original script has no confidence measure. Each run draws the trading days again at
     random (with replacement) from the history and re-optimises. A stock the optimiser picks in
     almost every run is a stable choice; one it picks only sometimes depends on luck in the data.
+
+    A tilt is added to every stock's expected annual return before optimising (your views; see
+    service.py). All tilts share the same resampled days, so their results differ only by the tilt.
     """
+    tilts = tilts if tilts is not None else [np.zeros(returns.shape[1])]
     days, assets = returns.shape
-    picked = np.zeros(assets)
+    picked = [np.zeros(assets) for _ in tilts]
     for _ in range(resamples):
         sample = returns[rng.integers(0, days, size=days)]
         annual_returns, annual_cov = annualise(sample)
-        picked += max_sharpe_weights(annual_returns, annual_cov, risk_free_rate) >= min_weight
-    return picked / resamples
+        for count, tilt in zip(picked, tilts):
+            count += max_sharpe_weights(annual_returns + tilt, annual_cov, risk_free_rate) >= min_weight
+    return [count / resamples for count in picked]
 
 
 def value_at_risk(weights: np.ndarray, returns: np.ndarray, confidence_pct: float) -> float:

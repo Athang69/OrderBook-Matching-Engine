@@ -4,7 +4,13 @@
 
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: calc(var(--header-h) + 16px);
+}
+
+/* Section links stop below the sticky header. This is set on the targets, not as scroll-padding on
+   the page: page-level padding made the browser scroll whenever the focused search box in the sticky
+   header changed, so typing in the search jumped the page up. */
+main [id] {
+  scroll-margin-top: calc(var(--header-h) + 16px);
 }
 
 @media (prefers-reduced-motion: reduce) {

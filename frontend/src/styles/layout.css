@@ -454,3 +454,40 @@
     display: none;
   }
 }
+
+/* ---- search extras, indices and the watchlist strip ---- */
+
+.search-results .search-heading {
+  display: block;
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.series-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--warn);
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.index-card {
+  cursor: default;
+}
+
+.index-card:hover {
+  background: transparent;
+}
+
+.strip-divider {
+  flex: none;
+  width: 1px;
+  margin: 10px 6px;
+  background: var(--border-strong);
+}

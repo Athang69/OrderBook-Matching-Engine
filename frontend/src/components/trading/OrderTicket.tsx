@@ -1,13 +1,15 @@
 import { forwardRef, useEffect, useState, type FormEvent } from "react";
 
 import { api } from "../../api/client";
-import type { Instrument, MarketState, Order, OrderType, Portfolio, Product, Side } from "../../api/types";
-import { money, price, qty as formatQty, reasonText } from "../../lib/format";
+import type { Instrument, Order, OrderType, Portfolio, Product, Quote, Session, Side } from "../../api/types";
+import { estimateCharges } from "../../lib/charges";
+import { money, price, qty as formatQty, reasonText, shortTime } from "../../lib/format";
 import { Segmented } from "../ui/Segmented";
 
 interface Props {
   instrument: Instrument;
-  state: MarketState;
+  quote: Quote | undefined;
+  session: Session | null;
   portfolio: Portfolio | null;
   marginDivisor: number;
   side: Side;
@@ -21,21 +23,22 @@ interface Props {
 }
 
 export const OrderTicket = forwardRef<HTMLElement, Props>(function OrderTicket(
-  { instrument, state, portfolio, marginDivisor, side, onSideChange, pickedPrice, onPlaced, onDeliveryClick, onIntradayClick }, ref,
+  { instrument, quote, session, portfolio, marginDivisor, side, onSideChange, pickedPrice, onPlaced, onDeliveryClick, onIntradayClick }, ref,
 ) {
   const [product, setProduct] = useState<Product>("CNC");
   const [type, setType] = useState<OrderType>("LIMIT");
-  const [quantity, setQuantity] = useState("10");
+  const [quantity, setQuantity] = useState("1");
   const [limit, setLimit] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const ltp = quote?.ltp ?? null;
 
-  // Each stock starts at its last price; clicking the order book overrides it.
+  // Each stock starts at its last price; clicking a price in the order book overrides it.
   useEffect(() => {
-    setLimit(((state.ltp ?? instrument.prev_close) / 100).toFixed(2));
+    setLimit(((ltp ?? instrument.close) / 100).toFixed(2));
     setResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instrument.symbol]);
+  }, [instrument.symbol, ltp == null]);
   useEffect(() => {
     if (pickedPrice) {
       setLimit((pickedPrice.price / 100).toFixed(2));
@@ -43,21 +46,36 @@ export const OrderTicket = forwardRef<HTMLElement, Props>(function OrderTicket(
     }
   }, [pickedPrice]);
 
+  const open = session?.state === "OPEN";
+  const deliveryOnly = instrument.series === "BE";
   const qtyValue = Number.parseInt(quantity, 10);
   const limitPaise = Math.round(Number.parseFloat(limit) * 100);
   const validQty = Number.isInteger(qtyValue) && qtyValue > 0;
   const validPrice = type === "MARKET" || (Number.isFinite(limitPaise) && limitPaise > 0);
-  // A market order is reserved at the upper band, the worst price it could trade at.
+  // A market order is reserved at the upper band, the worst price it could trade at; it fills near the live price.
+  const expected = type === "LIMIT" ? limitPaise : (side === "BUY" ? quote?.ask : quote?.bid) ?? ltp ?? instrument.close;
   const worstPrice = type === "LIMIT" ? limitPaise : instrument.upper_band;
-  const orderValue = validQty && validPrice ? qtyValue * worstPrice : null;
+  const value = validQty && validPrice ? qtyValue * expected : null;
   const held = portfolio?.holdings.find((h) => h.symbol === instrument.symbol);
   const freeShares = held ? held.qty - held.blocked : 0;
 
-  let requirement = " ";
-  if (orderValue != null) {
-    if (product === "MIS") requirement = `Margin needed: up to ${money(Math.floor(orderValue / marginDivisor))}`;
-    else if (side === "BUY") requirement = `Cash needed: ${money(orderValue)}`;
-    else requirement = `Shares needed: ${formatQty(qtyValue)} (you can sell ${formatQty(freeShares)})`;
+  let requirement = " ";
+  if (value != null) {
+    const charges = money(estimateCharges(product, side, value));
+    if (product === "MIS") requirement = `Margin: about ${money(Math.floor(value / marginDivisor))} · charges about ${charges}`;
+    else if (side === "BUY") requirement = `Cash: about ${money(value)} · charges about ${charges}`;
+    else requirement = `Shares: ${formatQty(qtyValue)} (you can sell ${formatQty(freeShares)}) · charges about ${charges}`;
+  }
+  if (type === "MARKET" && side === "BUY" && validQty && product === "CNC") {
+    requirement += ` · ${money(qtyValue * worstPrice)} is held until it fills`;
+  }
+
+  let sessionNote = "";
+  if (product === "MIS" && deliveryOnly) sessionNote = "Trade-for-trade (BE) stock: intraday is not allowed.";
+  else if (product === "MIS" && session && !session.intraday_open) {
+    sessionNote = open ? "After 3:20 pm intraday orders may only close a position." : `Intraday trading opens at ${shortTime(session.opens_at)}.`;
+  } else if (!open && session) {
+    sessionNote = `Market closed: this becomes an after-market order (AMO) and goes in with the first trade at ${shortTime(session.opens_at)}.`;
   }
 
   const submit = async (event: FormEvent) => {
@@ -99,13 +117,14 @@ export const OrderTicket = forwardRef<HTMLElement, Props>(function OrderTicket(
           <label className="field">
             <span>Price</span>
             <input type="number" step={instrument.tick / 100} min={0} value={type === "MARKET" ? "" : limit}
-              placeholder={type === "MARKET" ? "Market" : ""} disabled={type === "MARKET"} onChange={(e) => setLimit(e.target.value)} />
+              placeholder={type === "MARKET" ? `Market (${price(expected)})` : ""} disabled={type === "MARKET"} onChange={(e) => setLimit(e.target.value)} />
           </label>
         </div>
         <p className="hint">Allowed {price(instrument.lower_band)} to {price(instrument.upper_band)}, in steps of {price(instrument.tick)}.</p>
         <p className="requirement">{requirement}</p>
+        {sessionNote && <p className="session-note">{sessionNote}</p>}
         <button type="submit" className={`button block ${side === "BUY" ? "buy" : "sell"}`} disabled={busy || !validQty || !validPrice}>
-          {busy ? "Sending" : `${side === "BUY" ? "Buy" : "Sell"} ${validQty ? formatQty(qtyValue) : ""} ${instrument.symbol}`}
+          {busy ? "Sending" : `${side === "BUY" ? "Buy" : "Sell"} ${validQty ? formatQty(qtyValue) : ""} ${instrument.symbol}${open ? "" : " (AMO)"}`}
         </button>
       </form>
       {result && <p className={`result ${result.ok ? "up" : "down"}`} role="status">{result.text}</p>}
@@ -115,13 +134,16 @@ export const OrderTicket = forwardRef<HTMLElement, Props>(function OrderTicket(
 
 function describe(order: Order): { ok: boolean; text: string } {
   const filled = order.filled > 0 ? `${formatQty(order.filled)} filled at an average of ${price(order.avg_price)}` : "";
+  const charges = order.charges.total > 0 ? ` Charges ${money(order.charges.total)}.` : "";
   switch (order.status) {
     case "FILLED":
-      return { ok: true, text: `Order ${order.id} filled: ${filled}.` };
+      return { ok: true, text: `Order ${order.id} filled: ${filled}.${charges}` };
     case "PARTIALLY_FILLED":
-      return { ok: true, text: `Order ${order.id}: ${filled}; ${formatQty(order.remaining)} waiting in the book.` };
+      return { ok: true, text: `Order ${order.id}: ${filled}; ${formatQty(order.remaining)} waiting for the market.${charges}` };
     case "OPEN":
-      return { ok: true, text: `Order ${order.id} is waiting in the book at ${price(order.price)}.` };
+      return order.amo
+        ? { ok: true, text: `Order ${order.id} placed as an after-market order. It goes in when the market opens.` }
+        : { ok: true, text: `Order ${order.id} is waiting at ${price(order.price)}. It fills when NSE trades at that price or better.` };
     case "CANCELLED":
       return { ok: order.filled > 0, text: `Order ${order.id}: ${filled ? filled + "; the rest was cancelled. " : "cancelled. "}${reasonText(order.reason)}` };
     default:

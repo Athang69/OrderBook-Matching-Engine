@@ -112,3 +112,22 @@
   white-space: normal;
   font-size: 12px;
 }
+
+.session-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.data-table .tag {
+  margin-left: 6px;
+  font-size: 10px;
+}
+
+.data-table .link-button {
+  font-size: 14px;
+  font-weight: 600;
+}

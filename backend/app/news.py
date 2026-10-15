@@ -75,10 +75,42 @@ def parse_feed(feed: bytes, aliases: list[str], count: int) -> list[Article]:
     return articles[:count]
 
 
+SUFFIX = re.compile(r"[\s,.]+(limited|ltd\.?)\s*$", re.IGNORECASE)
+
+
+def company_terms(symbol: str, name: str | None, overrides: dict[str, tuple[str, list[str]]]) -> tuple[str, list[str]]:
+    """The name to search the news for, and the words a headline must contain to be about the stock.
+
+    "TATA MOTORS LIMITED" gives ("Tata Motors", ["Tata Motors", "TATAMOTORS"]). A name of three or more
+    words also accepts its first two, and one of four or more is searched by those two ("Adani Ports and
+    Special Economic Zone" is searched as "Adani Ports"). A symbol of three or more letters is accepted
+    too. `overrides` holds hand-written terms for stocks where this goes wrong.
+    """
+    if symbol in overrides:
+        return overrides[symbol]
+    clean = SUFFIX.sub("", (name or symbol).strip()).strip()
+    if clean.isupper():
+        clean = " ".join(w if len(w) <= 3 and w.isalpha() and w not in ("AND", "THE", "OF") else w.title()
+                         for w in clean.split()).replace(" And ", " and ").replace(" Of ", " of ")
+    words = clean.split()
+    aliases = [clean]
+    search = clean
+    if len(words) >= 3:
+        short = " ".join(words[1:3] if words[0].lower() == "the" else words[:2])
+        aliases.append(short)
+        if len(words) >= 4:
+            search = short
+    if symbol.isalpha() and len(symbol) >= 3:
+        aliases.append(symbol)
+    return search, aliases
+
+
 class NewsService:
-    def __init__(self, companies: dict[str, tuple[str, list[str]]], per_stock: int, cache_seconds: int,
-                 fetch=None, clock=time.time):
-        self._companies = companies
+    """`companies` maps a symbol to (name to search for, words a headline must contain): a dict, or a
+    function for stocks looked up on demand."""
+
+    def __init__(self, companies, per_stock: int, cache_seconds: int, fetch=None, clock=time.time):
+        self._company = companies if callable(companies) else companies.__getitem__
         self._per_stock = per_stock
         self._cache_seconds = cache_seconds
         self._fetch = fetch  # None means the real fetch_feed, looked up at call time so tests can replace it
@@ -96,10 +128,10 @@ class NewsService:
                     with self._lock:
                         self._cache[symbol] = entry
         with self._lock:
-            return {s: {"symbol": s, "company": self._companies[s][0], **self._cache[s]} for s in symbols}
+            return {s: {"symbol": s, "company": self._company(s)[0], **self._cache[s]} for s in symbols}
 
     def _refresh(self, symbol: str) -> dict:
-        company, aliases = self._companies[symbol]
+        company, aliases = self._company(symbol)
         fetch = self._fetch or fetch_feed
         try:
             articles = parse_feed(fetch(search_url(company)), aliases, self._per_stock)

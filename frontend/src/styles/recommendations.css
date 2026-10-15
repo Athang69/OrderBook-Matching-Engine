@@ -44,6 +44,7 @@
 .signal-preview li {
   display: grid;
   grid-template-columns: 90px 96px 1fr;
+  white-space: nowrap;
   align-items: center;
   gap: 10px;
   padding: 7px 0;
@@ -333,4 +334,197 @@
   fill: none;
   stroke: var(--text);
   stroke-width: 1.5;
+}
+
+/* ---- steps ---- */
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 12px 22px 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.steps li.on {
+  color: var(--text);
+}
+
+.steps li.on .step-number {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.steps li.done .step-number {
+  background: var(--up-tint);
+  color: var(--up);
+}
+
+/* ---- stock picker ---- */
+
+.picker-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.picker-search .search {
+  max-width: 520px;
+}
+
+.picked {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.picked li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-tint);
+}
+
+.icon-button.small {
+  width: 26px;
+  height: 26px;
+}
+
+.quick-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.chip-button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chip-button:hover {
+  background: var(--surface-2);
+}
+
+/* ---- news and your views ---- */
+
+.views .section-head p {
+  max-width: 720px;
+}
+
+.view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+.view-card {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.view-card.bullish {
+  border-color: color-mix(in srgb, var(--up) 55%, var(--border));
+}
+
+.view-card.bearish {
+  border-color: color-mix(in srgb, var(--down) 55%, var(--border));
+}
+
+.view-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.view-name,
+.view-price {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.view-price {
+  align-items: flex-end;
+  white-space: nowrap;
+}
+
+.view-card .news-source-mark {
+  display: none;
+}
+
+.view-card .news-list li {
+  padding: 8px 0;
+}
+
+.view-card .news-text a {
+  font-size: 13px;
+}
+
+.view-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.view-input .badge {
+  align-self: flex-start;
+}
+
+.view-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 560px) {
+  .view-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .picker-search {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

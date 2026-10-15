@@ -164,3 +164,46 @@
     padding-right: 5px;
   }
 }
+
+/* ---- best bid and offer ---- */
+
+.depth-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.touch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.touch-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.touch-side.bid {
+  background: var(--up-tint);
+}
+
+.touch-side.ask {
+  background: var(--down-tint);
+  text-align: right;
+}
+
+.touch-side:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.big-price {
+  font-size: 24px;
+  font-weight: 700;
+}

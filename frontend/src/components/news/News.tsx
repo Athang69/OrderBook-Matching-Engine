@@ -2,7 +2,7 @@ import type { NewsArticle, StockNews } from "../../api/types";
 import { dateTime, timeAgo } from "../../lib/format";
 import { useNews } from "../../hooks/useNews";
 
-const SOURCE_NOTE = "Headlines from Google News, past seven days. They are for you to read; recommendations do not use them.";
+const SOURCE_NOTE = "Headlines from Google News, past seven days, refreshed every five minutes. You read them and decide how confident you are; the recommendations use your confidence, not the headlines themselves.";
 
 export interface StockLabel {
   text: string;

@@ -1,29 +1,31 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { Instrument, IntradayAction, IntradayRecommendation, IntradayStock, MarketState, Portfolio } from "../../api/types";
-import { clock, money, price, qty } from "../../lib/format";
+import type { Confidences, IntradayAction, IntradayRecommendation, IntradayStock, Portfolio, Quote, SymbolRow } from "../../api/types";
 import { useIntradaySignals, type IntradayQuery } from "../../hooks/useIntradaySignals";
-import { NewsSection, type StockLabel } from "../news/News";
-import { ConfidenceMeter } from "../ui/ConfidenceMeter";
+import { clock, money, price, qty } from "../../lib/format";
+import type { StockLabel } from "../news/News";
 import { Modal } from "../ui/Modal";
 import { SignalBar } from "../ui/SignalBar";
-import { Outcomes, StatCard } from "./DeliveryModal";
+import { Outcomes, StatCard, Steps } from "./DeliveryModal";
 import { placeMarketOrders, type OrderOutcome } from "./placeOrders";
 import { StockPicker } from "./StockPicker";
+import { YourViews } from "./YourViews";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  instruments: Instrument[];
-  market: Record<string, MarketState>;
+  symbols: SymbolRow[];
+  names: Map<string, string>;
+  quotes: Record<string, Quote>;
+  watchlist: string[];
   portfolio: Portfolio | null;
   preselect: string;
   marginDivisor: number;
+  onFollow: (symbols: string[]) => void;
   onOrdersPlaced: () => void;
 }
 
-const MIN_CONFIDENCE = 10;
-const MAX_CONFIDENCE = 95;
+const MAX_STOCKS = 20;
 const DEFAULT_MARGIN_RUPEES = 50_000;
 
 export const ACTION_LABEL: Record<IntradayAction, StockLabel> = {
@@ -34,14 +36,16 @@ export const ACTION_LABEL: Record<IntradayAction, StockLabel> = {
 };
 
 const SIGNALS: [keyof NonNullable<IntradayStock["signals"]>, string][] = [
-  ["momentum", "Momentum"], ["vwap", "Price vs VWAP"], ["book", "Order book"], ["flow", "Trade flow"],
+  ["momentum", "Momentum"], ["vwap", "Price vs VWAP"], ["flow", "Trade flow"],
 ];
 
-/** Intraday: choose stocks, a confidence and the margin to use; then watch live signals and trade them. */
-export function IntradayModal({ open, onClose, instruments, market, portfolio, preselect, marginDivisor, onOrdersPlaced }: Props) {
-  const [step, setStep] = useState<"choose" | "live">("choose");
+type Step = "choose" | "views" | "live";
+
+/** Intraday: choose stocks and the margin to use, give your view of each after its news, then trade live signals. */
+export function IntradayModal({ open, onClose, symbols, names, quotes, watchlist, portfolio, preselect, marginDivisor, onFollow, onOrdersPlaced }: Props) {
+  const [step, setStep] = useState<Step>("choose");
   const [selected, setSelected] = useState<string[]>([]);
-  const [confidence, setConfidence] = useState("40");
+  const [confidences, setConfidences] = useState<Confidences>({});
   const [budget, setBudget] = useState("");
   const [touched, setTouched] = useState(false);
   const [query, setQuery] = useState<IntradayQuery | null>(null);
@@ -62,25 +66,30 @@ export function IntradayModal({ open, onClose, instruments, market, portfolio, p
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  useEffect(() => {
+    onFollow(open ? selected : []);
+  }, [open, selected, onFollow]);
+
   // Validation, mirrored on the server.
-  const confidenceValue = Number(confidence);
   const budgetPaise = Math.round(Number(budget) * 100);
   const problems: string[] = [];
-  if (selected.length < 1) problems.push("Select at least one stock.");
-  if (confidence.trim() === "" || !Number.isFinite(confidenceValue) || confidenceValue < MIN_CONFIDENCE || confidenceValue > MAX_CONFIDENCE) {
-    problems.push(`Confidence must be a number from ${MIN_CONFIDENCE} to ${MAX_CONFIDENCE}.`);
-  }
+  if (selected.length < 1) problems.push("Choose at least one stock.");
   if (budget.trim() === "" || !Number.isFinite(budgetPaise) || budgetPaise <= 0) {
     problems.push("Enter the margin you want to use.");
   } else if (portfolio && budgetPaise > available) {
     problems.push(`That is more than your available cash (${money(available)}).`);
   }
 
-  const submit = (event: FormEvent) => {
+  const next = (event: FormEvent) => {
     event.preventDefault();
     setTouched(true);
     if (problems.length > 0) return;
-    setQuery({ symbols: selected, confidence: confidenceValue, budget: budgetPaise });
+    setConfidences((current) => Object.fromEntries(selected.map((s) => [s, current[s] ?? 50])));
+    setStep("views");
+  };
+
+  const start = () => {
+    setQuery({ symbols: selected, confidences: Object.fromEntries(selected.map((s) => [s, confidences[s] ?? 50])), budget: budgetPaise });
     setOutcomes(null);
     setLive(true);
     setStep("live");
@@ -98,29 +107,18 @@ export function IntradayModal({ open, onClose, instruments, market, portfolio, p
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Intraday: what to trade right now?"
-      subtitle={`Live signals from the last few minutes of trading: buy, sell short or stay out, with an entry, a stop-loss and a target. Positions can be up to ${marginDivisor} times your margin.`}>
+    <Modal open={open} onClose={onClose} title="Intraday: what should I trade right now?"
+      subtitle={`Choose stocks, read their news and say how confident you are that each will rise today. Live signals from today's real trading are combined with your views: buy, sell short or stay out, with an entry, a stop-loss and a target. Positions can be up to ${marginDivisor} times your margin.`}>
+      <Steps step={step} labels={{ choose: "Stocks and margin", views: "News and your views", live: "Live signals" }} />
+
       {step === "choose" && (
-        <form className="modal-body" onSubmit={submit} noValidate>
+        <form className="modal-body" onSubmit={next} noValidate>
           <fieldset className="field-group">
-            <legend>1. Stocks to watch</legend>
-            <StockPicker instruments={instruments} market={market} selected={selected} onChange={setSelected} />
+            <legend>Stocks to watch</legend>
+            <StockPicker symbols={symbols} quotes={quotes} watchlist={watchlist} selected={selected} onChange={setSelected} max={MAX_STOCKS} />
           </fieldset>
           <fieldset className="field-group">
-            <legend>2. How strong must the signal be?</legend>
-            <div className="slider-row">
-              <input type="range" min={MIN_CONFIDENCE} max={MAX_CONFIDENCE} step={1} value={Number.isFinite(confidenceValue) ? confidenceValue : 40}
-                aria-label="Confidence percentage" onChange={(e) => setConfidence(e.target.value)} />
-              <label className="unit-input">
-                <input type="number" min={MIN_CONFIDENCE} max={MAX_CONFIDENCE} step={1} value={confidence}
-                  aria-label="Confidence percentage, typed" onChange={(e) => setConfidence(e.target.value)} />
-                <span>%</span>
-              </label>
-            </div>
-            <p className="hint">Four signals each vote from strong sell to strong buy. A stock is a trade when their weighted average is at least this strong. Most of the time only the strongest one or two reach 40%.</p>
-          </fieldset>
-          <fieldset className="field-group">
-            <legend>3. Margin to use</legend>
+            <legend>Margin to use</legend>
             <label className="unit-input wide">
               <span>{"₹"}</span>
               <input type="number" min={1} step={1000} value={budget} aria-label="Margin to use in rupees" onChange={(e) => setBudget(e.target.value)} />
@@ -130,15 +128,25 @@ export function IntradayModal({ open, onClose, instruments, market, portfolio, p
           {touched && problems.length > 0 && <ul className="problems" role="alert">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
           <div className="modal-foot">
             <button type="button" className="button ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="button primary">Show live signals</button>
+            <button type="submit" className="button primary">Next: read the news</button>
           </div>
         </form>
+      )}
+
+      {step === "views" && (
+        <div className="modal-body">
+          <YourViews symbols={selected} names={names} quotes={quotes} confidences={confidences} onChange={setConfidences} outlook="will rise today" />
+          <div className="modal-foot">
+            <button type="button" className="button ghost" onClick={() => setStep("choose")}>Back</button>
+            <button type="button" className="button primary" onClick={start}>Show live signals</button>
+          </div>
+        </div>
       )}
 
       {step === "live" && (
         <IntradayResult data={signals.data} error={signals.error} roundTripMs={signals.roundTripMs} updatedAt={signals.updatedAt}
           live={live} onToggleLive={() => setLive((l) => !l)} placing={placing} outcomes={outcomes} marginDivisor={marginDivisor}
-          onTrade={trade} onBack={() => setStep("choose")} onClose={onClose} />
+          onTrade={trade} onBack={() => setStep("views")} onClose={onClose} />
       )}
     </Modal>
   );
@@ -153,20 +161,20 @@ function IntradayResult({ data, error, roundTripMs, updatedAt, live, onToggleLiv
     return (
       <div className="modal-body running" role="status">
         {error ? <p className="problems">{error}</p> : <><div className="spinner" aria-hidden="true" /><p>Reading the market.</p></>}
-        <div className="modal-foot"><button type="button" className="button ghost" onClick={onBack}>Change choices</button></div>
+        <div className="modal-foot"><button type="button" className="button ghost" onClick={onBack}>Change my views</button></div>
       </div>
     );
   }
-  const asked = data.inputs.confidence;
+  const threshold = data.method.threshold;
   const trades = data.stocks.filter((s) => (s.action === "BUY" || s.action === "SELL") && s.quantity > 0);
-  const strongest = [...data.stocks].filter((s) => s.signals).sort((a, b) => b.confidence - a.confidence)[0];
-  const labels = Object.fromEntries(data.stocks.map((s) => [s.symbol, ACTION_LABEL[s.action]]));
+  const strongest = [...data.stocks].filter((s) => s.model_score != null).sort((a, b) => b.confidence - a.confidence)[0];
+  const closed = !data.session.intraday_open;
 
   return (
     <div className="modal-body">
       <div className="live-bar">
-        <span className={`status-dot ${live ? "live" : "paused"}`} aria-hidden="true" />
-        <span className="strong">{live ? "Live, updating every second" : "Paused"}</span>
+        <span className={`status-dot ${live && !closed ? "live" : "paused"}`} aria-hidden="true" />
+        <span className="strong">{closed ? data.session.label : live ? "Live, updating every second" : "Paused"}</span>
         <span className="chip" title="Time on the server from receiving the request to the answer">Server {(data.timing.total_us / 1000).toFixed(2)} ms</span>
         {roundTripMs != null && <span className="chip" title="Time measured in this browser for the whole request">Round trip {roundTripMs.toFixed(1)} ms</span>}
         {updatedAt && <span className="muted small">Updated {clock(updatedAt / 1000)}</span>}
@@ -175,15 +183,20 @@ function IntradayResult({ data, error, roundTripMs, updatedAt, live, onToggleLiv
       </div>
 
       <div className={trades.length ? "verdict up" : "verdict neutral"} role="status">
-        {trades.length ? (
+        {closed ? (
+          <>
+            <strong>No intraday trades now: {data.stocks[0]?.note}</strong>
+            <span>The live signals below are from the last trading you can see; trades are suggested only while intraday trading is open.</span>
+          </>
+        ) : trades.length ? (
           <>
             <strong>{trades.length} trade{trades.length > 1 ? "s" : ""} now: {trades.map((s) => `${ACTION_LABEL[s.action].text} ${s.symbol}`).join(", ")}.</strong>
-            <span>Each has signals at least {asked}% strong.</span>
+            <span>Each has a final score of at least ±{threshold.toFixed(2)}: {data.method.model_weight * 100}% live signals and {data.method.view_weight * 100}% your view.</span>
           </>
         ) : (
           <>
-            <strong>No stock has signals {asked}% strong right now.</strong>
-            <span>{strongest ? `The strongest is ${strongest.symbol} at ${(strongest.confidence * 100).toFixed(0)}% (${strongest.score > 0 ? "up" : "down"}). Signals change every second; wait, or lower the confidence.` : "Waiting for enough trading to read the market."}</span>
+            <strong>No stock has a final score of ±{threshold.toFixed(2)} right now.</strong>
+            <span>{strongest ? `The strongest is ${strongest.symbol} at ${strongest.score >= 0 ? "+" : ""}${strongest.score.toFixed(2)}. Signals change every second; wait, or revisit your views.` : `The signals need ${data.method.min_minutes} minutes of trading today.`}</span>
           </>
         )}
       </div>
@@ -201,7 +214,7 @@ function IntradayResult({ data, error, roundTripMs, updatedAt, live, onToggleLiv
         <table className="data-table">
           <thead>
             <tr>
-              <th>Stock</th><th>Signal</th><th>Confidence</th>
+              <th>Stock</th><th>Signal</th><th className="num">Final score</th><th>Live signals</th><th>Your view</th>
               {SIGNALS.map(([, label]) => <th key={label}>{label}</th>)}
               <th className="num">Entry</th><th className="num">Stop-loss</th><th className="num">Target</th>
               <th className="num">Shares</th><th className="num">Margin</th><th className="num">Max loss</th><th>Why</th>
@@ -210,12 +223,14 @@ function IntradayResult({ data, error, roundTripMs, updatedAt, live, onToggleLiv
           <tbody>
             {data.stocks.map((s) => {
               const label = ACTION_LABEL[s.action];
-              const trading = (s.action === "BUY" || s.action === "SELL");
+              const trading = s.action === "BUY" || s.action === "SELL";
               return (
                 <tr key={s.symbol} className={s.action === "BUY" ? "row-up" : s.action === "SELL" ? "row-down" : ""}>
                   <td className="strong">{s.symbol}</td>
                   <td><span className={`badge ${label.tone}`}>{label.text}</span></td>
-                  <td><ConfidenceMeter value={s.confidence} asked={asked} text={`${(s.confidence * 100).toFixed(0)}%`} /></td>
+                  <td className={`num ${s.score > 0 ? "up" : s.score < 0 ? "down" : ""}`}>{s.model_score == null || closed ? "—" : `${s.score >= 0 ? "+" : ""}${s.score.toFixed(2)}`}</td>
+                  <td>{s.model_score == null ? <span className="muted">{"—"}</span> : <SignalBar value={s.model_score} label="Live signals" />}</td>
+                  <td><span className="view-cell"><SignalBar value={s.your_view} label="Your view" /> <span className="num small muted">{s.your_confidence}%</span></span></td>
                   {SIGNALS.map(([key, labelText]) => (
                     <td key={key}>{s.signals ? <SignalBar value={s.signals[key]} label={labelText} /> : <span className="muted">{"—"}</span>}</td>
                   ))}
@@ -232,25 +247,23 @@ function IntradayResult({ data, error, roundTripMs, updatedAt, live, onToggleLiv
           </tbody>
         </table>
       </div>
-      <p className="hint">
-        Bars run from strong sell (red, left) to strong buy (green, right). The tick on each confidence bar is the {asked}% you asked for.
-      </p>
-
-      <NewsSection symbols={data.stocks.map((s) => s.symbol)} labels={labels} />
+      <p className="hint">Bars run from strong sell (red, left) to strong buy (green, right).</p>
 
       <p className="method-note">
-        Momentum is the last minute's price change against the stock's normal one-second swings; price vs VWAP compares the last
-        price with the session's volume-weighted average; order book compares quantity waiting to buy and to sell in the best five
-        levels; trade flow compares shares bought and sold by orders that crossed the spread in the last five minutes. Weights:
-        momentum {data.method.weights.momentum * 100}%, VWAP {data.method.weights.vwap * 100}%, book {data.method.weights.book * 100}%,
-        flow {data.method.weights.flow * 100}%. Stop-losses sit {data.method.stop_moves} typical {data.method.hold_seconds / 60}-minute moves away and
-        targets {data.method.reward_to_risk} times as far. The simulator has no stop orders, so watch open positions or square off. Not investment advice.
+        From real NSE trading today: momentum is the last minute's price change against the stock's normal one-minute moves;
+        price vs VWAP compares the live price with today's volume-weighted average; trade flow compares shares traded on up-ticks
+        and down-ticks in the last five minutes. Live signals = momentum {data.method.weights.momentum * 100}%, VWAP {data.method.weights.vwap * 100}%,
+        flow {data.method.weights.flow * 100}%. Your view is your confidence turned into −1 (0%) to +1 (100%). Final score
+        = {data.method.model_weight * 100}% live signals + {data.method.view_weight * 100}% your view; a trade needs ±{threshold.toFixed(2)}.
+        Entries are the live best offer for a buy and best bid for a short sale. Stop-losses sit {data.method.stop_moves} typical {data.method.hold_minutes}-minute
+        moves away and targets {data.method.reward_to_risk} times as far. There are no stop orders here, so watch open positions; intraday positions
+        are squared off at 3:20 pm. Not investment advice.
       </p>
 
       {outcomes && <Outcomes outcomes={outcomes} />}
 
       <div className="modal-foot">
-        <button type="button" className="button ghost" onClick={onBack}>Change choices</button>
+        <button type="button" className="button ghost" onClick={onBack}>Change my views</button>
         <button type="button" className="button ghost" onClick={onClose}>Close</button>
         {trades.length > 0 && !outcomes && (
           <button type="button" className="button primary" onClick={() => onTrade(data)} disabled={placing}>

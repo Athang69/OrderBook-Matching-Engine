@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client";
-import type { IntradayRecommendation } from "../api/types";
+import type { Confidences, IntradayRecommendation } from "../api/types";
 
 export interface IntradayQuery {
   symbols: string[];
-  confidence: number;
+  confidences: Confidences;
   budget: number;
 }
 
@@ -24,7 +24,7 @@ export interface IntradayState {
 export function useIntradaySignals(query: IntradayQuery | null, live: boolean, intervalMs = 1000): IntradayState {
   const [state, setState] = useState<IntradayState>({ data: null, error: "", roundTripMs: null, updatedAt: null });
   const inFlight = useRef(false);
-  const key = query ? `${query.symbols.join(",")}|${query.confidence}|${query.budget}` : "";
+  const key = query ? `${query.symbols.join(",")}|${JSON.stringify(query.confidences)}|${query.budget}` : "";
 
   useEffect(() => {
     if (!query) return;
@@ -34,7 +34,7 @@ export function useIntradaySignals(query: IntradayQuery | null, live: boolean, i
       inFlight.current = true;
       const started = performance.now();
       try {
-        const data = await api.recommendIntraday(query.symbols, query.confidence, query.budget);
+        const data = await api.recommendIntraday(query.symbols, query.confidences, query.budget);
         if (!cancelled) setState({ data, error: "", roundTripMs: performance.now() - started, updatedAt: Date.now() });
       } catch (err) {
         if (!cancelled) setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : "No answer from the server." }));

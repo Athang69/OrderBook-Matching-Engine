@@ -142,11 +142,12 @@ void test_engine_routes_by_symbol() {
     Engine engine;
     CHECK(engine.add_symbol("AAA", 5, 9000, 11000));
     CHECK(engine.add_symbol("BBB", 10, 50000, 60000));
-    CHECK(!engine.add_symbol("AAA", 5, 9000, 11000));
+    CHECK(engine.add_symbol("AAA", 5, 9000, 11000));   // an empty book takes a new day's band
     CHECK(!engine.add_symbol("BAD", 5, 9001, 11000));  // band not on the tick grid
     std::vector<Trade> trades;
     CHECK(engine.new_order(1, "ZZZ", Side::Buy, OrderType::Limit, 10000, 10, trades).reject == Reject::UnknownSymbol);
     CHECK(engine.new_order(1, "AAA", Side::Sell, OrderType::Limit, 10000, 10, trades).resting == 10);
+    CHECK(!engine.add_symbol("AAA", 5, 9500, 10500));  // not while orders are resting in it
     CHECK(engine.new_order(1, "BBB", Side::Sell, OrderType::Limit, 55000, 10, trades).reject == Reject::DuplicateOrder);
     // The same price in another symbol must not match.
     CHECK(engine.new_order(2, "BBB", Side::Buy, OrderType::Limit, 55000, 10, trades).resting == 10);

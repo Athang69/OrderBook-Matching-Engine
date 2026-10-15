@@ -33,7 +33,7 @@ def client():
 
 
 def ask(client, **overrides):
-    body = {"symbols": ["RELIANCE", "TCS", "ITC"], "confidence": 70, "budget": 2_00_000 * RS}
+    body = {"symbols": ["RELIANCE", "TCS", "ITC"], "confidences": {"RELIANCE": 60}, "budget": 2_00_000 * RS}
     body.update(overrides)
     return client.post("/v1/recommendations", json=body)
 
@@ -45,21 +45,27 @@ def test_recommendation_end_to_end(client):
     stocks = {s["symbol"]: s for s in result["stocks"]}
     assert set(stocks) == {"RELIANCE", "TCS", "ITC"}
     assert stocks["RELIANCE"]["decision"] == "BUY" and stocks["RELIANCE"]["quantity"] > 0
+    assert stocks["RELIANCE"]["your_confidence"] == 60 and stocks["TCS"]["your_confidence"] == 50
     assert stocks["ITC"]["decision"] == "DONT_BUY"
-    # Quantities use the simulator's current price, not the history's.
-    market = client.get("/v1/market/orderbook/RELIANCE").json()
-    instrument = next(i for i in client.get("/v1/market/instruments").json() if i["symbol"] == "RELIANCE")
-    assert stocks["RELIANCE"]["last_price"] in (market["ltp"], instrument["prev_close"])
+    # Without live prices (the tests run offline) quantities use NSE's reference close.
+    instrument = client.get("/v1/market/instrument/RELIANCE").json()
+    assert stocks["RELIANCE"]["last_price"] in (instrument["quote"]["ltp"], instrument["close"])
     assert result["recommended"]["invested"] <= 2_00_000 * RS
     assert result["data"]["source"] == "test data"
+
+
+def test_a_negative_view_can_drop_a_stock(client):
+    stocks = {s["symbol"]: s for s in ask(client, confidences={"RELIANCE": 0, "TCS": 100}).json()["stocks"]}
+    assert stocks["RELIANCE"]["agreement"] < stocks["RELIANCE"]["history_agreement"]
+    assert stocks["TCS"]["agreement"] >= stocks["TCS"]["history_agreement"]
 
 
 @pytest.mark.parametrize("overrides, status, message", [
     ({"symbols": ["RELIANCE"]}, 422, None),
     ({"symbols": ["RELIANCE", "RELIANCE"]}, 422, "only once"),
     ({"symbols": ["RELIANCE", "NOPE"]}, 422, "Unknown stock: NOPE"),
-    ({"confidence": 49}, 422, None),
-    ({"confidence": 99.5}, 422, None),
+    ({"confidences": {"RELIANCE": 101}}, 422, "between 0 and 100"),
+    ({"confidences": {"INFY": 60}}, 422, "not selected"),
     ({"budget": 0}, 422, None),
     ({"budget": 50_00_000 * RS}, 422, "more than your available cash"),
 ])

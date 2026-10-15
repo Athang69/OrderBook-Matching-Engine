@@ -1,6 +1,7 @@
 """Pre-trade checks. Every order passes through here before it reaches the matching engine."""
 from dataclasses import dataclass
 
+from . import charges
 from .accounts import Account
 from .instruments import Instrument
 
@@ -13,7 +14,7 @@ class Reservation:
 
 def check_order(account: Account, instrument: Instrument, side: str, order_type: str, product: str, qty: int,
                 price: int | None, margin_divisor: int, max_order_qty: int) -> tuple[str | None, Reservation]:
-    """Returns (reject reason or None, what to reserve)."""
+    """Returns (reject reason or None, what to reserve). Charges are reserved with the order."""
     # Check 1: the order itself is valid for this stock.
     if qty <= 0:
         return "BAD_QUANTITY", Reservation()
@@ -29,11 +30,12 @@ def check_order(account: Account, instrument: Instrument, side: str, order_type:
 
     # A market order has no price, so reserve for the worst case: the upper band.
     worst_price = price if order_type == "LIMIT" else instrument.upper_band
+    fees = charges.estimate(product, side, qty * worst_price)
 
     if product == "CNC":
         if side == "BUY":
-            # Check 2: enough cash for the full order value.
-            needed = qty * worst_price
+            # Check 2: enough cash for the full order value and its charges.
+            needed = qty * worst_price + fees
             if account.available(margin_divisor) < needed:
                 return "INSUFFICIENT_FUNDS", Reservation()
             return None, Reservation(cash=needed)
@@ -46,7 +48,7 @@ def check_order(account: Account, instrument: Instrument, side: str, order_type:
 
     # Intraday: margin is needed only for the part that opens or adds to a position.
     opening = max(0, qty - account.closable_qty(instrument.symbol, side))
-    needed = opening * worst_price // margin_divisor
+    needed = opening * worst_price // margin_divisor + fees
     if account.available(margin_divisor) < needed:
         return "INSUFFICIENT_FUNDS", Reservation()
     return None, Reservation(cash=needed)

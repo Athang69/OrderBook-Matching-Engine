@@ -1,4 +1,4 @@
-// Types for the simulator's API. All prices and money are integers in paise (Rs 1,179.40 is 117940).
+// Types for the API. All prices and money are integers in paise (Rs 1,179.40 is 117940).
 
 export type Side = "BUY" | "SELL";
 export type OrderType = "LIMIT" | "MARKET";
@@ -10,32 +10,70 @@ export type Level = [number, number, number];
 /** [Unix seconds, price] */
 export type PricePoint = [number, number];
 
-export interface MarketState {
-  symbol: string;
-  ltp: number | null;
-  prev_close: number;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  volume: number;
-  turnover: number;
-  trades: number;
-  bids: Level[];
-  asks: Level[];
+/** [Unix seconds, open, high, low, close, volume] */
+export type Bar = [number, number, number, number, number, number];
+
+/** [symbol, NSE name, series, reference close, tick, band %, lower band, upper band] for every stock. */
+export type SymbolRow = [string, string, string, number, number, number, number, number];
+
+export interface SymbolList {
+  data_date: string;
+  count: number;
+  watchlist: string[];
+  symbols: SymbolRow[];
 }
 
+/** A stock's rules for the day, from NSE's daily files. */
 export interface Instrument {
   symbol: string;
-  company: string;
-  prev_close: number;
+  name: string;
+  series: string;
+  /** Reference closing price: the price band is worked out from it. */
+  close: number;
   tick: number;
   band_pct: number;
   lower_band: number;
   upper_band: number;
+  volume: number;
   avg_trade_qty: number;
-  day: { open: number; high: number; low: number; close: number; volume: number };
   data_date: string;
-  market: MarketState;
+}
+
+/** The live quote, from Yahoo Finance. Missing values are null. */
+export interface Quote {
+  symbol: string;
+  name: string | null;
+  ltp: number | null;
+  prev_close: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number;
+  vwap: number | null;
+  bid: number | null;
+  ask: number | null;
+  /** Time of the last trade Yahoo reported, Unix seconds. */
+  quote_time: number | null;
+  /** When the server last fetched the quote. */
+  polled_at: number | null;
+  /** Time of the last price from the stream. */
+  tick_time: number | null;
+  week52_high: number | null;
+  week52_low: number | null;
+  /** Rupees, not paise. */
+  market_cap: number | null;
+  pe: number | null;
+  eps: number | null;
+  /** Percent. */
+  dividend_yield: number | null;
+  price_to_book: number | null;
+  avg_volume: number | null;
+  market_state: string | null;
+  live: boolean;
+}
+
+export interface InstrumentDetail extends Instrument {
+  quote: Quote;
 }
 
 export interface Trade {
@@ -43,19 +81,74 @@ export interface Trade {
   symbol: string;
   price: number;
   qty: number;
-  /** Side of the order that caused the trade. */
-  side: Side;
+  /** By the tick test: a price above the previous one is a buy. Null before the first price change. */
+  side: Side | null;
   ts: number;
 }
 
-export interface SimStatus {
+export interface IndexQuote {
+  name: string;
+  ltp: number | null;
+  prev_close: number | null;
+  high: number | null;
+  low: number | null;
+  time: number | null;
+}
+
+export interface Session {
+  state: "OPEN" | "PRE_OPEN" | "CLOSED";
+  label: string;
+  now: number;
+  trading_day: string;
+  opens_at: number;
+  closes_at: number;
+  intraday_open: boolean;
+  square_off_at: number;
+}
+
+export interface Status {
+  session: Session;
   data_date: string;
   demo_user: string;
   margin_divisor: number;
-  bots_enabled: boolean;
-  session_seconds: number;
-  elapsed_seconds: number;
-  progress: number;
+  live: boolean;
+  feed: {
+    stream_connected: boolean;
+    last_tick: number | null;
+    stream_error: string | null;
+    quotes_at: number | null;
+    quote_error: string | null;
+  };
+}
+
+export type ChartRange = "1d" | "5d" | "1mo" | "6mo" | "1y" | "5y";
+
+export interface Chart {
+  symbol: string;
+  range: ChartRange;
+  bars: Bar[];
+  prev_close: number | null;
+}
+
+export interface TopOfBook {
+  symbol: string;
+  bid: number | null;
+  ask: number | null;
+  ltp: number | null;
+  polled_at: number | null;
+  depth_available: boolean;
+  your_bids: Level[];
+  your_asks: Level[];
+}
+
+export interface Charges {
+  brokerage: number;
+  stt: number;
+  exchange: number;
+  sebi: number;
+  stamp: number;
+  gst: number;
+  total: number;
 }
 
 export interface Order {
@@ -72,6 +165,10 @@ export interface Order {
   remaining: number;
   avg_price: number | null;
   reason: string | null;
+  /** Placed while the market was closed. */
+  amo: boolean;
+  tag: string | null;
+  charges: Charges;
   created_at: number;
   updated_at: number;
 }
@@ -82,6 +179,7 @@ export interface Holding {
   blocked: number;
   avg_price: number;
   ltp: number;
+  prev_close: number;
   value: number;
   unrealised_pnl: number;
 }
@@ -105,6 +203,8 @@ export interface Portfolio {
   holdings_value: number;
   realised_pnl: number;
   unrealised_pnl: number;
+  charges: Charges;
+  net_pnl: number;
   equity: number;
   holdings: Holding[];
   intraday: IntradayPosition[];
@@ -144,22 +244,32 @@ export interface NewsResponse {
   stocks: Record<string, StockNews>;
 }
 
+/** Your confidence in each stock, 0 to 100; 50 means no view. */
+export type Confidences = Record<string, number>;
+
 // ---- delivery recommendation (recomendation_system) ----
 
 export interface RecommendedStock {
   symbol: string;
   decision: "BUY" | "DONT_BUY";
-  /** Share of re-runs in which the optimiser gave this stock at least 5% of the money (0 to 1). */
-  confidence: number;
+  your_confidence: number;
+  /** Added to the expected annual return by your view. */
+  return_shift: number;
+  /** Share of re-runs with your view in which the optimiser gave this stock at least 5% of the money. */
+  agreement: number;
+  /** The same, on price history alone. */
+  history_agreement: number;
   /** Share of the budget in the recommended portfolio (0 to 1). */
   weight: number;
   amount: number;
   last_price: number;
   quantity: number;
   cost: number;
+  history_weight: number;
   max_sharpe_weight: number;
   min_vol_weight: number;
   expected_return: number;
+  expected_return_with_view: number;
   volatility: number;
   note: string;
 }
@@ -172,20 +282,29 @@ export interface PortfolioSummary {
 }
 
 export interface Recommendation {
-  inputs: { symbols: string[]; confidence: number; budget: number };
+  inputs: { symbols: string[]; confidences: Confidences; budget: number };
   data: { source: string; start: string; end: string; trading_days: number; stale: boolean };
-  method: { monte_carlo_portfolios: number; resamples: number; min_weight: number; risk_free_rate: number; trading_days_per_year: number };
+  method: {
+    monte_carlo_portfolios: number;
+    resamples: number;
+    min_weight: number;
+    buy_agreement: number;
+    view_strength: number;
+    risk_free_rate: number;
+    trading_days_per_year: number;
+  };
   stocks: RecommendedStock[];
   recommended: null | {
     symbols: string[];
     expected_return: number;
+    expected_return_history: number;
     volatility: number;
     sharpe: number | null;
     value_at_risk: { confidence: number; one_day_fraction: number; one_day_amount: number };
     invested: number;
     cash_left: number;
   };
-  reference_portfolios: { max_sharpe: PortfolioSummary; min_volatility: PortfolioSummary };
+  reference_portfolios: { history_only: PortfolioSummary; max_sharpe: PortfolioSummary; min_volatility: PortfolioSummary };
   /** Monte Carlo portfolios: [annual volatility, annual return, Sharpe ratio]. */
   frontier: { points: [number, number, number][] };
   runtime_ms: number;
@@ -199,17 +318,21 @@ export type IntradayAction = "BUY" | "SELL" | "NO_TRADE" | "WAIT";
 export interface IntradaySignals {
   momentum: number;
   vwap: number;
-  book: number;
   flow: number;
 }
 
 export interface IntradayStock {
   symbol: string;
   action: IntradayAction;
+  /** Size of the final score, 0 to 1. */
   confidence: number;
+  /** Final score: 60% live signals, 40% your view. */
   score: number;
+  model_score: number | null;
+  your_confidence: number;
+  your_view: number;
   signals: IntradaySignals | null;
-  /** How many of the four signals point the same way as the score. */
+  /** How many of the three signals point the same way as the score. */
   agree: number;
   ltp: number | null;
   vwap: number | null;
@@ -229,14 +352,19 @@ export interface IntradayStock {
 }
 
 export interface IntradayRecommendation {
-  inputs: { symbols: string[]; confidence: number; budget: number };
+  inputs: { symbols: string[]; confidences: Confidences; budget: number };
+  session: { state: Session["state"]; intraday_open: boolean; label: string };
   stocks: IntradayStock[];
   totals: { trades: number; margin: number; exposure: number; max_loss: number; max_gain: number };
   method: {
     weights: IntradaySignals;
+    model_weight: number;
+    view_weight: number;
+    threshold: number;
     momentum_seconds: number;
     window_seconds: number;
-    hold_seconds: number;
+    min_minutes: number;
+    hold_minutes: number;
     stop_moves: number;
     reward_to_risk: number;
     leverage: number;

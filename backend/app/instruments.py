@@ -1,4 +1,9 @@
-"""Loads each stock's reference data from the previous day's free NSE files."""
+"""Every NSE stock that can be traded, with its rules for the day, from NSE's free daily files.
+
+The two files are the latest full bhavcopy (prices and volumes for each stock) and the price band
+list (each stock's daily limit, and its name). The closing price in the bhavcopy is the reference
+for the next session: the price band is worked out from it, and so is the tick size.
+"""
 import csv
 import datetime as dt
 from dataclasses import dataclass
@@ -8,18 +13,16 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Instrument:
     symbol: str
-    prev_close: int  # all prices in paise
-    open: int
-    high: int
-    low: int
-    close: int
-    volume: int
+    name: str  # as NSE lists it, e.g. "RELIANCE INDUSTRIES LIMITED"
+    series: str  # EQ, or BE for trade-for-trade stocks
+    close: int  # the reference closing price, in paise, like every price here
+    volume: int  # shares traded on that day
     trades: int
     tick: int
     band_pct: int
     lower_band: int
     upper_band: int
-    data_date: str  # the trading day the figures come from, e.g. "2026-10-09"
+    data_date: str  # the trading day the closing price comes from, e.g. "2026-10-14"
 
     @property
     def avg_trade_qty(self) -> int:
@@ -27,14 +30,9 @@ class Instrument:
 
     def to_dict(self) -> dict:
         return {
-            "symbol": self.symbol,
-            "prev_close": self.prev_close,
-            "tick": self.tick,
-            "band_pct": self.band_pct,
-            "lower_band": self.lower_band,
-            "upper_band": self.upper_band,
-            "day": {"open": self.open, "high": self.high, "low": self.low, "close": self.close, "volume": self.volume},
-            "data_date": self.data_date,
+            "symbol": self.symbol, "name": self.name, "series": self.series, "close": self.close,
+            "tick": self.tick, "band_pct": self.band_pct, "lower_band": self.lower_band, "upper_band": self.upper_band,
+            "volume": self.volume, "avg_trade_qty": self.avg_trade_qty, "data_date": self.data_date,
         }
 
 
@@ -54,24 +52,24 @@ def tick_size(price: int) -> int:
     return 500
 
 
-def price_band(prev_close: int, band_pct: int, tick: int) -> tuple[int, int]:
+def price_band(reference: int, band_pct: int, tick: int) -> tuple[int, int]:
     """Lowest and highest allowed price for the day, rounded inwards to the tick."""
-    lower = prev_close * (100 - band_pct) // 100
-    upper = prev_close * (100 + band_pct) // 100
+    lower = reference * (100 - band_pct) // 100
+    upper = reference * (100 + band_pct) // 100
     lower += (-lower) % tick  # round up to a tick multiple
     upper -= upper % tick  # round down to a tick multiple
-    return lower, upper
+    return max(lower, tick), upper
 
 
 def to_paise(text: str) -> int:
     return int(round(float(text.strip()) * 100))
 
 
-def make_instrument(symbol: str, prev_close: int, open_: int, high: int, low: int, close: int, volume: int,
-                    trades: int, band_pct: int, data_date: str) -> Instrument:
-    tick = tick_size(prev_close)
-    lower, upper = price_band(prev_close, band_pct, tick)
-    return Instrument(symbol, prev_close, open_, high, low, close, volume, trades, tick, band_pct, lower, upper, data_date)
+def make_instrument(symbol: str, close: int, band_pct: int, data_date: str, name: str = "", series: str = "EQ",
+                    volume: int = 0, trades: int = 0) -> Instrument:
+    tick = tick_size(close)
+    lower, upper = price_band(close, band_pct, tick)
+    return Instrument(symbol, name or symbol, series, close, volume, trades, tick, band_pct, lower, upper, data_date)
 
 
 def latest_data_files(data_dir: Path) -> tuple[Path, Path]:
@@ -88,30 +86,34 @@ def _file_date(path: Path) -> dt.date:
     return dt.datetime.strptime(stamp, "%d%m%Y").date()
 
 
-def load_instruments(data_dir: Path, symbols: list[str], default_band_pct: int) -> list[Instrument]:
+def load_instruments(data_dir: Path, series: tuple[str, ...], default_band_pct: int) -> dict[str, Instrument]:
+    """Every stock in the given series, by symbol, from the newest NSE files in `data_dir`."""
     bhav_path, bands_path = latest_data_files(data_dir)
     data_date = _file_date(bhav_path).isoformat()
 
-    bands: dict[str, int] = {}
+    listed: dict[str, tuple[int, str]] = {}  # symbol -> (band %, name)
     with bands_path.open(newline="") as fh:
         for row in csv.DictReader(fh):
-            if row["Series"].strip() == "EQ":
+            if row["Series"].strip() in series:
                 band = row["Band"].strip()
-                bands[row["Symbol"].strip()] = int(band) if band.isdigit() else default_band_pct
+                listed[row["Symbol"].strip()] = (int(band) if band.isdigit() else default_band_pct,
+                                                 row["Security Name"].strip())
 
     found: dict[str, Instrument] = {}
     with bhav_path.open(newline="") as fh:
         for row in csv.DictReader(fh, skipinitialspace=True):
-            symbol = row["SYMBOL"].strip()
-            if symbol in symbols and row["SERIES"].strip() == "EQ":
-                found[symbol] = make_instrument(
-                    symbol,
-                    to_paise(row["PREV_CLOSE"]), to_paise(row["OPEN_PRICE"]), to_paise(row["HIGH_PRICE"]),
-                    to_paise(row["LOW_PRICE"]), to_paise(row["CLOSE_PRICE"]),
-                    int(row["TTL_TRD_QNTY"]), int(row["NO_OF_TRADES"]),
-                    bands.get(symbol, default_band_pct), data_date,
-                )
-    missing = [s for s in symbols if s not in found]
-    if missing:
-        raise ValueError(f"Symbols not found in {bhav_path.name}: {', '.join(missing)}")
-    return [found[s] for s in symbols]
+            symbol, kind = row["SYMBOL"].strip(), row["SERIES"].strip()
+            if kind not in series:
+                continue
+            try:
+                close = to_paise(row["CLOSE_PRICE"])
+            except ValueError:
+                continue
+            if close <= 0:
+                continue
+            band, name = listed.get(symbol, (default_band_pct, symbol))
+            found[symbol] = make_instrument(symbol, close, band, data_date, name=name, series=kind,
+                                            volume=int(row["TTL_TRD_QNTY"] or 0), trades=int(row["NO_OF_TRADES"] or 0))
+    if not found:
+        raise ValueError(f"No {'/'.join(series)} stocks in {bhav_path.name}")
+    return found

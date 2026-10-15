@@ -1,7 +1,7 @@
 // Matching engine process. Reads one command per line on stdin and writes the
 // resulting events on stdout, ending every reply with a line "END".
 //
-//   SYM <symbol> <tick> <lower_band> <upper_band>     -> OK | ERR <reason>
+//   SYM <symbol> <tick> <lower_band> <upper_band>     -> OK | ERR <reason>  (adds a stock, or resets an empty book)
 //   NEW <id> <symbol> <B|S> <L|M> <price> <qty>       -> REJ <id> <reason>
 //                                                      | ACK <id>, TRD <buy_id> <sell_id> <price> <qty>...,
 //                                                        FIN <id> <filled> <resting> <cancelled>
@@ -86,7 +86,7 @@ void handle(ob::Engine& engine, const std::string& line, std::ostream& out) {
         ob::Price upper = 0;
         in >> symbol >> tick >> lower >> upper;
         if (!in || !engine.add_symbol(symbol, tick, lower, upper)) {
-            out << "ERR invalid or duplicate symbol\n";
+            out << "ERR invalid band or orders still resting\n";
             return;
         }
         out << "OK\n";

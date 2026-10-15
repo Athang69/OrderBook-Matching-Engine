@@ -261,3 +261,127 @@
   border-color: var(--border-strong);
   background: var(--surface-2);
 }
+
+/* ---- title row and watchlist star ---- */
+
+.quote-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 4px 0 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.quote-title h1 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.watch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.watch svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.watch.on {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.watch.on svg {
+  fill: var(--warn);
+}
+
+/* ---- watchlist cards ---- */
+
+.other-card {
+  position: relative;
+  padding: 0;
+}
+
+.other-card.selected {
+  border-color: var(--accent);
+}
+
+.other-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.other-open .sparkline {
+  margin-top: 6px;
+}
+
+.other-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.other-card:hover .other-remove,
+.other-remove:focus-visible {
+  opacity: 1;
+}
+
+.other-remove:hover {
+  background: var(--surface-3);
+}
+
+.other-remove svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+@media (max-width: 560px) {
+  .quote-title {
+    flex-direction: column;
+  }
+  .other-remove {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .chart-card .card-head {
+    flex-wrap: wrap;
+  }
+  .range-tabs button {
+    padding: 0 9px;
+  }
+}

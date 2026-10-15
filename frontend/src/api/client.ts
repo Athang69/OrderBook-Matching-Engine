@@ -1,6 +1,7 @@
-// Calls to the simulator's REST API.
+// Calls to the REST API.
 import type {
-  IntradayRecommendation, NewOrder, NewsResponse, Order, Portfolio, PricePoint, Recommendation, SimStatus, Trade,
+  Chart, ChartRange, Confidences, InstrumentDetail, IntradayRecommendation, NewOrder, NewsResponse, Order, Portfolio,
+  PricePoint, Quote, Recommendation, SymbolList, TopOfBook,
 } from "./types";
 
 export class ApiError extends Error {
@@ -25,20 +26,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
+const many = (name: string, values: string[]) => values.map((v) => `${name}=${encodeURIComponent(v)}`).join("&");
+const path = (symbol: string) => encodeURIComponent(symbol);
 
 export const api = {
+  symbols: () => request<SymbolList>("/v1/market/symbols"),
+  instrument: (symbol: string) => request<InstrumentDetail>(`/v1/market/instrument/${path(symbol)}`),
+  quotes: (symbols: string[]) => request<Record<string, Quote>>(`/v1/market/quotes?${many("symbols", symbols)}`),
+  chart: (symbol: string, range: ChartRange) => request<Chart>(`/v1/market/chart/${path(symbol)}?range=${range}`),
+  sparklines: (symbols: string[]) => request<Record<string, PricePoint[]>>(`/v1/market/sparklines?${many("symbols", symbols)}`),
+  orderbook: (symbol: string) => request<TopOfBook>(`/v1/market/orderbook/${path(symbol)}`),
   placeOrder: (order: NewOrder) => request<Order>("/v1/orders", post(order)),
   cancelOrder: (id: number) => request<Order>(`/v1/orders/${id}`, { method: "DELETE" }),
   orders: () => request<Order[]>("/v1/orders?limit=100"),
   portfolio: (user: string) => request<Portfolio>(`/v1/portfolio/${user}`),
   squareOff: (user: string) => request<Order[]>(`/v1/portfolio/${user}/squareoff`, { method: "POST" }),
-  trades: (symbol: string) => request<Trade[]>(`/v1/market/trades/${symbol}?limit=30`),
-  histories: () => request<Record<string, PricePoint[]>>("/v1/market/histories"),
-  news: (symbols: string[]) =>
-    request<NewsResponse>(`/v1/news?${symbols.map((s) => `symbols=${encodeURIComponent(s)}`).join("&")}`),
-  recommend: (symbols: string[], confidence: number, budget: number) =>
-    request<Recommendation>("/v1/recommendations", post({ symbols, confidence, budget })),
-  recommendIntraday: (symbols: string[], confidence: number, budget: number) =>
-    request<IntradayRecommendation>("/v1/recommendations/intraday", post({ symbols, confidence, budget })),
-  setBots: (enabled: boolean) => request<SimStatus>("/v1/sim/bots", post({ enabled })),
+  news: (symbols: string[]) => request<NewsResponse>(`/v1/news?${many("symbols", symbols)}`),
+  recommend: (symbols: string[], confidences: Confidences, budget: number) =>
+    request<Recommendation>("/v1/recommendations", post({ symbols, confidences, budget })),
+  recommendIntraday: (symbols: string[], confidences: Confidences, budget: number) =>
+    request<IntradayRecommendation>("/v1/recommendations/intraday", post({ symbols, confidences, budget })),
 };

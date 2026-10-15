@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Download the free previous-day NSE files the simulator needs into data/nse/.
+"""Download the free daily NSE files the app needs into data/nse/.
 
-Two files are fetched for the most recent trading day:
-  * the full bhavcopy (previous close, open, high, low, close, volume, trade count)
-  * the price band list (daily circuit limit per stock)
+Two files are fetched for the most recent trading day that NSE has published (today's appear in
+the evening, after the close):
+  * the full bhavcopy (close, volume and trade count of every stock), whose closing prices are the
+    reference for the next session's price bands
+  * the price band list (each stock's name and daily price limit)
 
 Only the standard library is used so this runs before the virtualenv exists.
 The files belong to NSE: they are kept in data/ (git-ignored) and never committed.
@@ -61,7 +63,7 @@ def main() -> int:
     parser.add_argument("--lookback", type=int, default=10, help="how many calendar days to search backwards")
     args = parser.parse_args()
 
-    day = dt.date.today() - dt.timedelta(days=1)  # previous-day data only, never today's
+    day = dt.date.today()  # today's files exist only after the close; then it falls back a day
     for _ in range(args.lookback):
         if day.weekday() < 5:
             try:

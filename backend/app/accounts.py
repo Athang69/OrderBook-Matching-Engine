@@ -6,6 +6,8 @@ loss is settled in cash when the position is reduced or closed.
 """
 from dataclasses import dataclass, field
 
+from .charges import Charges
+
 
 @dataclass
 class Holding:
@@ -24,9 +26,9 @@ class IntradayPosition:
 class Account:
     user_id: str
     cash: int
-    is_bot: bool = False
     blocked_cash: int = 0  # reserved by open orders
-    realised_pnl: int = 0
+    realised_pnl: int = 0  # before charges
+    charges: Charges = field(default_factory=Charges)  # everything paid in brokerage, taxes and fees
     holdings: dict[str, Holding] = field(default_factory=dict)
     intraday: dict[str, IntradayPosition] = field(default_factory=dict)
 
@@ -44,6 +46,10 @@ class Account:
         return self.intraday.setdefault(symbol, IntradayPosition())
 
     # ---- fills ----
+
+    def pay_charges(self, charges: Charges) -> None:
+        self.cash -= charges.total
+        self.charges.add(charges)
 
     def fill_delivery_buy(self, symbol: str, qty: int, price: int) -> None:
         self.cash -= qty * price

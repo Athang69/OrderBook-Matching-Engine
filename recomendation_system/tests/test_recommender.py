@@ -4,7 +4,7 @@ import pytest
 
 from recomendation_system import portfolio as pf
 from recomendation_system.data import PriceHistory
-from recomendation_system.service import RecommendationError, Settings, recommend
+from recomendation_system.service import RecommendationError, Settings, recommend, view_tilts
 
 FAST = Settings(monte_carlo_portfolios=3000, resamples=80, frontier_points=200)
 PRICES = {"AAA": 100_00, "BBB": 250_00, "CCC": 50_00}
@@ -20,9 +20,9 @@ def history(specs=(STRONG, MIDDLING, LOSING), days=1500, seed=1) -> PriceHistory
     return PriceHistory([f"2020-01-{i}" for i in range(len(prices))], prices, "synthetic", False)
 
 
-def run(confidence=70, budget=10_00_000 * 100, h=None, symbols=("AAA", "BBB", "CCC")):
+def run(confidences=None, budget=10_00_000 * 100, h=None, symbols=("AAA", "BBB", "CCC")):
     data = h or history()
-    return recommend(list(symbols), confidence, budget, PRICES, loader=lambda _s, _start: data, settings=FAST)
+    return recommend(list(symbols), confidences or {}, budget, PRICES, loader=lambda _s, _start: data, settings=FAST)
 
 
 def test_optimal_weights_are_valid():
@@ -45,17 +45,19 @@ def test_optimisers_beat_every_random_portfolio():
 
 def test_confidence_separates_strong_and_losing_stocks():
     returns = pf.log_returns(history().prices)
-    confidence = pf.selection_confidence(returns, 0.065, 100, 0.05, np.random.default_rng(0))
+    [confidence] = pf.selection_confidence(returns, 0.065, 100, 0.05, np.random.default_rng(0))
     assert confidence[0] > 0.9  # the strong stock is picked in almost every run
     assert confidence[2] < 0.1  # the losing stock almost never
 
 
-def test_recommends_only_confident_stocks_and_splits_the_budget():
-    result = run(confidence=70)
+def test_buys_stocks_picked_in_most_runs_and_splits_the_budget():
+    result = run()
     by_symbol = {s["symbol"]: s for s in result["stocks"]}
     for stock in result["stocks"]:
-        assert (stock["decision"] == "BUY") == (stock["confidence"] * 100 >= 70)
+        assert (stock["decision"] == "BUY") == (stock["agreement"] >= 0.5)
         assert stock["cost"] == stock["quantity"] * stock["last_price"] <= stock["amount"]
+        assert stock["your_confidence"] == 50 and stock["return_shift"] == 0  # no views given
+        assert stock["agreement"] == stock["history_agreement"]
     assert by_symbol["AAA"]["decision"] == "BUY"
     assert by_symbol["CCC"]["decision"] == "DONT_BUY" and by_symbol["CCC"]["quantity"] == 0
     rec = result["recommended"]
@@ -65,12 +67,24 @@ def test_recommends_only_confident_stocks_and_splits_the_budget():
     assert result["stocks"][0]["decision"] == "BUY"  # buys are listed first
 
 
-def test_nothing_to_buy_when_no_stock_is_confident_enough():
-    # Three similar stocks: the optimiser's choice is never stable, so 99% is out of reach.
-    similar = history(specs=((0.0003, 0.012),) * 3, seed=3)
-    result = run(confidence=99, h=similar)
-    assert result["recommended"] is None
-    assert all(s["decision"] == "DONT_BUY" and s["quantity"] == 0 for s in result["stocks"])
+def test_views_move_expected_returns_by_up_to_half_a_volatility():
+    vols = np.array([0.2, 0.3, 0.4])
+    assert view_tilts([100, 50, 0], vols, 0.5).tolist() == pytest.approx([0.1, 0.0, -0.2])
+    assert view_tilts([75, 25, 50], vols, 0.5).tolist() == pytest.approx([0.05, -0.075, 0.0])
+
+
+def test_a_strong_view_changes_the_decision():
+    neutral = {s["symbol"]: s for s in run()["stocks"]}
+    assert neutral["CCC"]["decision"] == "DONT_BUY"
+    keen = {s["symbol"]: s for s in run({"CCC": 100, "AAA": 0})["stocks"]}
+    assert keen["CCC"]["agreement"] > neutral["CCC"]["agreement"]
+    assert keen["CCC"]["history_agreement"] == neutral["CCC"]["agreement"]  # history alone is unchanged
+    assert keen["AAA"]["expected_return_with_view"] < keen["AAA"]["expected_return"]
+
+
+def test_nothing_to_buy_when_every_view_is_against():
+    result = run({"AAA": 0, "BBB": 0, "CCC": 0}, h=history(specs=((0.0003, 0.012),) * 3, seed=3))
+    assert all(s["agreement"] <= s["history_agreement"] for s in result["stocks"])
 
 
 def test_value_at_risk_grows_with_confidence():
@@ -90,14 +104,14 @@ def test_result_describes_data_and_method():
     assert result["data"]["trading_days"] == 1501
     assert result["method"]["resamples"] == FAST.resamples
     assert len(result["frontier"]["points"]) == FAST.frontier_points
-    assert set(result["reference_portfolios"]) == {"max_sharpe", "min_volatility"}
+    assert set(result["reference_portfolios"]) == {"history_only", "max_sharpe", "min_volatility"}
 
 
 @pytest.mark.parametrize("kwargs, message", [
     ({"symbols": ("AAA",)}, "at least two"),
     ({"symbols": ("AAA", "AAA")}, "only once"),
-    ({"confidence": 40}, "between 50% and 99%"),
-    ({"confidence": 100}, "between 50% and 99%"),
+    ({"confidences": {"AAA": -1}}, "between 0% and 100%"),
+    ({"confidences": {"AAA": 101}}, "between 0% and 100%"),
     ({"budget": 0}, "more than zero"),
     ({"symbols": ("AAA", "ZZZ")}, "No current price for ZZZ"),
 ])

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from backend.app import config, news
 from backend.app.main import app
-from backend.app.news import NewsService, parse_feed
+from backend.app.news import NewsService, company_terms, parse_feed
 
 ALIASES = ["Reliance", "RIL"]
 
@@ -152,4 +152,14 @@ def test_news_api(client):
 def test_news_api_validation(client):
     assert client.get("/v1/news").status_code == 422
     assert client.get("/v1/news", params={"symbols": ["NOPE"]}).status_code == 422
-    assert client.get("/v1/news", params={"symbols": config.SYMBOLS + ["RELIANCE"]}).status_code == 422
+    too_many = config.DEFAULT_WATCHLIST + ["WIPRO", "NTPC", "ONGC"]
+    assert len(too_many) > config.MAX_NEWS_SYMBOLS
+    assert client.get("/v1/news", params={"symbols": too_many}).status_code == 422
+
+
+def test_search_terms_for_any_stock():
+    assert company_terms("TMCV", "TATA MOTORS LIMITED", {}) == ("Tata Motors", ["Tata Motors", "TMCV"])
+    search, aliases = company_terms("ADANIPORTS", "Adani Ports and Special Economic Zone Limited", {})
+    assert search == "Adani Ports" and "Adani Ports" in aliases
+    assert company_terms("INDHOTEL", "THE INDIAN HOTELS COMPANY LIMITED", {})[1][1] == "Indian Hotels"
+    assert company_terms("TCS", "anything", config.COMPANIES) == config.COMPANIES["TCS"]

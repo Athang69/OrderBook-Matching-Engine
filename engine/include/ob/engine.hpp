@@ -13,14 +13,18 @@ namespace ob {
 
 class Engine {
 public:
-    // Returns false if the symbol already exists or the configuration is invalid.
+    // Adds a stock, or replaces its settings when its book is empty (each trading day has a new price
+    // band). Returns false if the stock still has resting orders or the configuration is invalid.
     bool add_symbol(const std::string& symbol, Price tick, Price lower_band, Price upper_band) {
-        if (books_.count(symbol) != 0) return false;
+        const auto it = books_.find(symbol);
+        if (it != books_.end() && it->second->open_orders() != 0) return false;
+        std::unique_ptr<OrderBook> book;
         try {
-            books_.emplace(symbol, std::make_unique<OrderBook>(tick, lower_band, upper_band));
+            book = std::make_unique<OrderBook>(tick, lower_band, upper_band);
         } catch (const std::invalid_argument&) {
             return false;
         }
+        books_[symbol] = std::move(book);
         return true;
     }
 
