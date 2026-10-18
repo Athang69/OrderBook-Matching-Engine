@@ -8,6 +8,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PORT="${PORT:-8000}"
+# Private settings such as OPENROUTER_API_KEY live in .env, which git ignores.
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
 
 echo "[1/4] Matching engine (C++)"
 [ -f engine/build/build.ninja ] || [ -f engine/build/Makefile ] || cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release >/dev/null

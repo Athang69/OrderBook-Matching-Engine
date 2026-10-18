@@ -19,6 +19,7 @@ interface Props {
 
 const LINKS: [string, string][] = [
   ["#summary", "Markets"],
+  ["#why", "Why it moved"],
   ["#depth", "Order book"],
   ["#news", "News"],
   ["#recommendations", "Recommendations"],

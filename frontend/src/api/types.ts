@@ -373,3 +373,127 @@ export interface IntradayRecommendation {
   /** Server time, in microseconds, from receiving the request to the answer. */
   timing: { checks_us: number; snapshot_us: number; signals_us: number; total_us: number };
 }
+
+// ---- why a stock moved ----
+
+export type Scope = "company" | "peers" | "industry" | "market" | "global";
+
+export interface HeadlineSentiment {
+  label: "positive" | "negative" | "neutral";
+  pos: number;
+  neg: number;
+  neu: number;
+  score: number;
+}
+
+export interface ExplainHeadline {
+  title: string;
+  source: string;
+  url: string;
+  published: number;
+  scope: Scope;
+  /** -1 (only negative words) to +1 (only positive words). */
+  tone: number;
+  reasons: string[];
+  sentiment?: HeadlineSentiment;
+}
+
+export interface ReasonGroup {
+  label: string;
+  scope: Scope;
+  score: number;
+  tone: "positive" | "negative" | "mixed";
+  headlines: ExplainHeadline[];
+}
+
+export interface Explanation {
+  symbol: string;
+  /** The day explained, YYYY-MM-DD. */
+  date: string;
+  previous_date: string;
+  latest_date: string;
+  /** Fractions: 0.0123 is +1.23%. */
+  change: number;
+  price: number;
+  prev_close: number;
+  verdict: "Market-wide move" | "Industry-wide move" | "Company-specific move" | "Ordinary day";
+  summary: string[];
+  market: { name: string; change: number | null };
+  beta: number | null;
+  market_part: number | null;
+  /** The stock's typical daily move once the market is taken out. */
+  typical_move: number | null;
+  sector: { name: string; change: number } | null;
+  peers: { symbol: string; change: number | null }[];
+  profile: { sector: string | null; industry: string | null; summary: string | null; peers: string[] };
+  reasons: ReasonGroup[];
+  headlines: Record<Scope, ExplainHeadline[]>;
+  /** The largest own moves of about the last three months, newest first. */
+  big_days: { date: string; change: number; own: number }[];
+  runtime_ms: number;
+  /** Recent OHLC bars for candlestick rendering (last ~10 days). */
+  ohlc_bars?: OHLCBar[];
+  /** FinBERT sentiment totals per scope. */
+  sentiment_totals?: Record<Scope, { avg_score: number; count: number; positive: number; negative: number; neutral: number }>;
+  /** Candlestick patterns found on the explained day and the day before. */
+  candle_patterns?: { today: CandlePattern[]; previous: CandlePattern[] };
+  /** Chart CNN predictions for the explained day and the day before. */
+  chart_cnn?: { today: ChartCNN | null; previous: ChartCNN | null };
+}
+
+export interface OHLCBar {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface CandlePattern {
+  name: string;
+  bias: "bullish" | "bearish" | "neutral";
+  up_rate: number;
+  note: string;
+}
+
+export interface ChartCNN {
+  prob_up: number | null;
+  image_b64: string;
+  accuracy: number | null;
+  baseline: number | null;
+  auc: number | null;
+}
+
+export interface AnalysisDriver {
+  title: string;
+  explanation: string;
+  impact: "major" | "moderate" | "minor";
+  direction: "negative" | "positive";
+  evidence: number[];
+}
+
+export interface Analysis {
+  symbol: string;
+  date: string;
+  explanation: Explanation;
+  /** The headlines Claude saw, numbered as it cites them. */
+  evidence: (ExplainHeadline & { n: number })[];
+  india: { name: string; change: number }[];
+  world: { name: string; change: number; date: string }[];
+  analysis: null | {
+    headline: string;
+    verdict: string;
+    drivers: AnalysisDriver[];
+    market_context: string;
+    stock_specific: string;
+    confidence: "high" | "medium" | "low";
+    confidence_reason: string;
+    watch: string[];
+    technical_view?: string;
+  };
+  /** Claude's reply as text, when it could not be read as the expected shape. */
+  raw: string | null;
+  model: string;
+  seconds: number;
+}

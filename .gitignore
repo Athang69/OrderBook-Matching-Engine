@@ -16,3 +16,6 @@ frontend/dist/
 # The original portfolio project is its own git repository (with its own .git folder). Committing it
 # here would store only a pointer, so it is left out; recomendation_system/ holds the integrated version.
 recomendation_system/Automated-Portfolio-Rebalancing-and-Risk-Analysis/
+
+# Private keys (OPENROUTER_API_KEY); never commit
+.env

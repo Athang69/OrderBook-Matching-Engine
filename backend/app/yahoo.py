@@ -1,9 +1,11 @@
 """Live and historical NSE prices from Yahoo Finance, free and without an account.
 
-Three services are used:
+Five services are used:
   quotes  one request returns the latest quote for up to 50 stocks: last price, best bid and best
           offer, the day's open, range and volume, the 52-week range, market value and P/E
   chart   price bars: one-minute bars for today, up to weekly bars for five years
+  profile a company's sector, industry and business description
+  similar the companies Yahoo considers most like a given one
   stream  a WebSocket that pushes each stock's last traded price and the day's volume as it trades,
           about once a second for busy stocks. Measured on 15 Oct 2026, prices reached us about two
           seconds after they traded on NSE.
@@ -25,6 +27,8 @@ log = logging.getLogger("orderbook.yahoo")
 
 QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote"
 CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/"
+PROFILE_URL = "https://query2.finance.yahoo.com/v10/finance/quoteSummary/"
+SIMILAR_URL = "https://query2.finance.yahoo.com/v6/finance/recommendationsbysymbol/"
 STREAM_URL = "wss://streamer.finance.yahoo.com/?version=2"
 QUOTES_PER_REQUEST = 50
 RESUBSCRIBE_SECONDS = 15  # the stream stops sending to clients that do not repeat their subscription
@@ -131,6 +135,21 @@ class YahooClient:
         if not results:
             raise LookupError(f"no chart data for {ticker}")
         return parse_chart(results[0])
+
+
+    def profile(self, ticker: str) -> dict:
+        """The company's sector, industry and a short description of its business."""
+        reply = self._get(PROFILE_URL + ticker, {"modules": "assetProfile"})
+        results = (reply.get("quoteSummary") or {}).get("result") or [{}]
+        profile = results[0].get("assetProfile") or {}
+        return {"sector": profile.get("sector"), "industry": profile.get("industry"),
+                "summary": profile.get("longBusinessSummary")}
+
+    def similar(self, ticker: str) -> list[str]:
+        """Tickers of similar companies, as Yahoo suggests them (often four or five)."""
+        reply = self._get(SIMILAR_URL + ticker, {})
+        results = (reply.get("finance") or {}).get("result") or [{}]
+        return [r["symbol"] for r in results[0].get("recommendedSymbols") or [] if r.get("symbol")]
 
 
 class YahooStream:

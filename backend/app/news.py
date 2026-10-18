@@ -45,10 +45,10 @@ def fetch_feed(url: str) -> bytes:
         return response.read()
 
 
-def parse_feed(feed: bytes, aliases: list[str], count: int) -> list[Article]:
-    """The `count` most recent headlines that name the company."""
+def parse_items(feed: bytes) -> list[Article]:
+    """Every headline in a feed, newest first: publisher name taken off the title, quote pages,
+    unsafe links and repeats of the same story dropped."""
     root = ElementTree.fromstring(feed)
-    mentions = re.compile("|".join(rf"(?<!\w){re.escape(a)}(?!\w)" for a in aliases), re.IGNORECASE)
     articles: list[Article] = []
     seen: set[str] = set()
     for item in root.iterfind("./channel/item"):
@@ -58,9 +58,7 @@ def parse_feed(feed: bytes, aliases: list[str], count: int) -> list[Article]:
         source = (source_element.text or "").strip() if source_element is not None else ""
         if source and title.endswith(f" - {source}"):
             title = title[: -len(f" - {source}")].strip()  # Google appends the publisher to the title
-        if not title or not url.startswith(("https://", "http://")):
-            continue
-        if not mentions.search(title) or NOT_NEWS.search(title):
+        if not title or not url.startswith(("https://", "http://")) or NOT_NEWS.search(title):
             continue
         key = re.sub(r"\W+", " ", title.lower()).strip()[:70]  # the same story from different feeds
         if key in seen:
@@ -72,7 +70,18 @@ def parse_feed(feed: bytes, aliases: list[str], count: int) -> list[Article]:
             continue
         articles.append(Article(title=title, source=source, url=url, published=published))
     articles.sort(key=lambda a: a.published, reverse=True)
-    return articles[:count]
+    return articles
+
+
+def mentions_any(words: list[str]) -> re.Pattern:
+    """Matches any of `words` as a whole word, ignoring case."""
+    return re.compile("|".join(rf"(?<!\w){re.escape(w)}(?!\w)" for w in words), re.IGNORECASE)
+
+
+def parse_feed(feed: bytes, aliases: list[str], count: int) -> list[Article]:
+    """The `count` most recent headlines that name the company."""
+    mentions = mentions_any(aliases)
+    return [a for a in parse_items(feed) if mentions.search(a.title)][:count]
 
 
 SUFFIX = re.compile(r"[\s,.]+(limited|ltd\.?)\s*$", re.IGNORECASE)

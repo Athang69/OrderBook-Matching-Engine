@@ -19,6 +19,7 @@ REST (prices are integers in paise):
   POST   /v1/recommendations                which of the chosen stocks to buy, with your views (recomendation_system)
   POST   /v1/recommendations/intraday       buy, sell short or stay out, from live data and your views
   GET    /v1/news?symbols=                  latest news headlines for each stock
+  GET    /v1/explain/{symbol}?date=         why the stock moved that day, from the market, similar companies and news
 WebSocket:
   /v1/stream/marketdata                     send {"subscribe": [symbols]}; quotes and trades are pushed
 """
@@ -43,6 +44,8 @@ from . import config, intraday
 from .audit import AuditLog
 from .engine_client import EngineClient
 from .exchange import Exchange
+from .analysis import AnalysisError, Analyst
+from .explain import ExplainError, Explainer, to_date
 from .instruments import load_instruments
 from .market_data import MarketData
 from .news import SOURCE as NEWS_SOURCE
@@ -77,6 +80,8 @@ class Simulator:
                                  config.MIS_MARGIN_DIVISOR, config.MAX_ORDER_QTY, 5, config.DELIVERY_ONLY_SERIES)
         self.exchange.create_account(config.DEMO_USER, config.DEMO_CASH)
         self.news = NewsService(self.news_terms, config.NEWS_PER_STOCK, config.NEWS_CACHE_SECONDS)
+        self.explainer = Explainer(self.yahoo, lambda: set(self.instruments), self.news_terms)
+        self.analyst = Analyst(self.explainer, lambda s: (self.market.quote(s) or {}).get("name") or self.instruments[s].name)
         self.requested: dict[str, float] = {}  # stock -> when it was last asked for
         self.bars_loaded: dict[str, str] = {}  # stock -> trading day its one-minute bars were loaded for
         self.charts: dict[tuple[str, str], tuple[float, dict]] = {}
@@ -265,6 +270,8 @@ async def lifespan(app: FastAPI):
     # Python lets one thread run at a time and switches every 5 ms by default; 0.5 ms keeps requests
     # quick while worker threads (quote downloads, recommendations) are busy.
     sys.setswitchinterval(0.0005)
+    from .finbert import warm as _warm_finbert
+    _warm_finbert()  # start loading FinBERT in the background
     sim = Simulator()
     app.state.sim = sim
     tasks = [asyncio.create_task(sim.broadcast_forever()), asyncio.create_task(sim.clock_forever())]
@@ -584,6 +591,40 @@ async def intraday_recommendations(req: IntradayRequest) -> Response:
     result["timing"] = {"checks_us": (checked - started) // 1000, "snapshot_us": (copied - checked) // 1000,
                         "signals_us": (done - copied) // 1000, "total_us": (done - started) // 1000}
     return Response(json.dumps(result, separators=(",", ":")), media_type="application/json")
+
+
+# ---- why a stock moved ----
+
+@app.get("/v1/explain/{symbol}")
+def explain(symbol: str, date: str | None = Query(None, description="YYYY-MM-DD; the latest trading day if left out")) -> dict:
+    """Why the stock moved on a day: the market's part and the stock's own part, similar companies, its
+    sector index, and the headlines of that day tagged with their likely cause (see explain.py).
+
+    A plain `def` endpoint, so FastAPI runs it on a worker thread: the first call for a stock downloads
+    its price history and searches the news, which takes a second or two.
+    """
+    symbol = require_symbol(symbol)
+    if not sim().live:
+        raise HTTPException(503, "Explanations need the live data feed, which is switched off (ORDERBOOK_LIVE=0).")
+    try:
+        return sim().explainer.explain(symbol, to_date(date))
+    except ExplainError as err:
+        raise HTTPException(422, str(err)) from None
+
+
+@app.get("/v1/analysis/{symbol}")
+def analysis(symbol: str, date: str | None = Query(None, description="YYYY-MM-DD; the latest trading day if left out")) -> dict:
+    """Why the stock moved that day, written by Claude from the evidence (analysis.py). Takes 30 to 60 seconds
+    the first time for a stock and day; repeats within 30 minutes come from memory."""
+    symbol = require_symbol(symbol)
+    if not sim().live:
+        raise HTTPException(503, "The analysis needs the live data feed, which is switched off (ORDERBOOK_LIVE=0).")
+    try:
+        return sim().analyst.analyse(symbol, to_date(date))
+    except ExplainError as err:
+        raise HTTPException(422, str(err)) from None
+    except (AnalysisError, subprocess.TimeoutExpired) as err:
+        raise HTTPException(502, f"Claude could not write the analysis: {err}") from None
 
 
 # ---- news ----

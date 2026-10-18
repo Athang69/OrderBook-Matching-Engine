@@ -1,0 +1,390 @@
+/* ---- why the stock moved ---- */
+
+.why-button {
+  align-self: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.why-button:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.chart-frame svg.pickable {
+  cursor: pointer;
+}
+
+.why-days,
+.why-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.day-chip {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.day-chip:hover {
+  background: var(--surface-2);
+}
+
+.day-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--text);
+}
+
+.market-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.why-ai {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  padding: 18px 20px;
+}
+
+.why-ai-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ai-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: #d97757;
+  color: #fff;
+  font-size: 13px;
+}
+
+.why-headline {
+  margin-bottom: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.why-drivers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.why-driver {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--down);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.why-driver.pos {
+  border-left-color: var(--up);
+}
+
+.why-driver-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.why-driver p {
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.why-cites {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.cite {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: 0.85em;
+  font-weight: 700;
+  vertical-align: super;
+  line-height: 1;
+}
+
+.why-cites .cite {
+  vertical-align: baseline;
+}
+
+.cite:hover {
+  text-decoration: underline;
+}
+
+.why-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 6px;
+}
+
+.why-columns h3 {
+  margin: 8px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.why-columns p,
+.why-watch li {
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.why-watch {
+  list-style: disc;
+  padding-left: 18px;
+}
+
+.why-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 12px;
+  color: var(--text-2);
+}
+
+.why-loading .spinner {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+
+.why-quick {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.why-quick ul {
+  margin-top: 6px;
+  padding-left: 18px;
+  list-style: disc;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.why-raw {
+  white-space: pre-wrap;
+  color: var(--text-2);
+}
+
+.why-facts {
+  margin: 14px 0;
+}
+
+.why-facts .stat-cards {
+  margin: 0 0 12px;
+}
+
+.why-evidence summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.ev-group h4 {
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ev-group ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ev-group li {
+  display: grid;
+  grid-template-columns: 38px 10px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 6px;
+  border-radius: var(--radius-sm);
+  scroll-margin-top: calc(var(--header-h) + 80px);
+}
+
+.ev-group li.cited .ev-n {
+  color: var(--accent);
+}
+
+.ev-group li.hit {
+  background: var(--accent-tint);
+  outline: 1px solid var(--accent);
+}
+
+.ev-n {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ev-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.ev-dot.up {
+  background: var(--up);
+}
+
+.ev-dot.down {
+  background: var(--down);
+}
+
+.ev-text a {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- FinBERT badges ---- */
+.finbert-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.finbert-badge.positive {
+  background: color-mix(in srgb, var(--up) 20%, transparent);
+  color: var(--up);
+}
+
+.finbert-badge.negative {
+  background: color-mix(in srgb, var(--down) 20%, transparent);
+  color: var(--down);
+}
+
+.finbert-badge.neutral {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+/* ---- chart CNN + patterns card ---- */
+.why-tech {
+  padding: 18px 20px;
+}
+
+.tech-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.cnn-image {
+  width: 240px;
+  height: 256px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #000;
+}
+
+.tech-cnn {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.cnn-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cnn-prob {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tech-patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tech-patterns h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.candle-chart {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  margin-bottom: 8px;
+}
+
+.pattern-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .why-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tech-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tech-cnn {
+    flex-direction: column;
+  }
+
+  .cnn-image {
+    width: 180px;
+    height: 192px;
+  }
+}

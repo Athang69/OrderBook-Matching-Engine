@@ -2,14 +2,14 @@
 
 **Project progress report: literature survey, documentation and timeline**
 
-| | |
-|---|---|
-| Institution | [fill in] |
-| Department / Course | [fill in] |
-| Team members | [fill in] |
-| Project guide | [fill in] |
-| Report date | 11 October 2026 |
-| Repository | <https://github.com/Athang69/OrderBook-Matching-Engine> |
+|                     |                                                         |
+| ------------------- | ------------------------------------------------------- |
+| Institution         | [fill in]                                               |
+| Department / Course | [fill in]                                               |
+| Team members        | [fill in]                                               |
+| Project guide       | [fill in]                                               |
+| Report date         | 11 October 2026                                         |
+| Repository          | <https://github.com/Athang69/OrderBook-Matching-Engine> |
 
 ---
 
@@ -44,13 +44,13 @@ To build a simulator of the Indian stock exchange's order book and matching engi
 
 ### 1.4 Scope
 
-| In scope | Out of scope |
-|---|---|
-| NSE equity shares (cash market) | Futures, options, currency, commodities |
-| Delivery and intraday trading | Real money and real users |
-| Previous-day and older data | Live market prices |
-| Free data sources | Paid data |
-| Buy suggestions for study purposes | Investment advice |
+| In scope                           | Out of scope                            |
+| ---------------------------------- | --------------------------------------- |
+| NSE equity shares (cash market)    | Futures, options, currency, commodities |
+| Delivery and intraday trading      | Real money and real users               |
+| Previous-day and older data        | Live market prices                      |
+| Free data sources                  | Paid data                               |
+| Buy suggestions for study purposes | Investment advice                       |
 
 The system is a simulator for learning. The buy suggestions are an academic demonstration and are not investment advice.
 
@@ -58,23 +58,23 @@ The system is a simulator for learning. The buy suggestions are an academic demo
 
 ## 2. Basic concepts
 
-| Term | Meaning |
-|---|---|
-| Order book | The list of all waiting buy and sell orders for a stock |
-| Bid and ask | The bid is the highest price a buyer is offering. The ask is the lowest price a seller is asking. |
-| Market depth (L2) | The total quantity waiting at each price. We show the best five prices on each side. |
-| Matching engine | The program that pairs buy orders with sell orders to create trades |
-| Price-time priority | The better price is served first. If two orders have the same price, the earlier one is served first. |
-| Limit order | An order to buy or sell at a stated price or better |
-| Market order | An order to buy or sell immediately at the best available price |
-| Delivery trading | Shares are actually bought and held; the buyer pays the full amount |
-| Intraday trading | Shares are bought and sold on the same day; only a margin is needed |
-| Tick size | The smallest step by which a price can change |
-| Price band | The highest and lowest price allowed for a stock in a day |
-| Sentiment analysis | Deciding whether a piece of text is positive, negative or neutral |
-| FinBERT | A language model trained on financial text, used for sentiment analysis |
-| Portfolio optimisation | Deciding what share of money to put in each stock to balance return and risk |
-| SLSQP | An optimisation method that finds the best values while respecting given limits |
+| Term                   | Meaning                                                                                               |
+| ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| Order book             | The list of all waiting buy and sell orders for a stock                                               |
+| Bid and ask            | The bid is the highest price a buyer is offering. The ask is the lowest price a seller is asking.     |
+| Market depth (L2)      | The total quantity waiting at each price. We show the best five prices on each side.                  |
+| Matching engine        | The program that pairs buy orders with sell orders to create trades                                   |
+| Price-time priority    | The better price is served first. If two orders have the same price, the earlier one is served first. |
+| Limit order            | An order to buy or sell at a stated price or better                                                   |
+| Market order           | An order to buy or sell immediately at the best available price                                       |
+| Delivery trading       | Shares are actually bought and held; the buyer pays the full amount                                   |
+| Intraday trading       | Shares are bought and sold on the same day; only a margin is needed                                   |
+| Tick size              | The smallest step by which a price can change                                                         |
+| Price band             | The highest and lowest price allowed for a stock in a day                                             |
+| Sentiment analysis     | Deciding whether a piece of text is positive, negative or neutral                                     |
+| FinBERT                | A language model trained on financial text, used for sentiment analysis                               |
+| Portfolio optimisation | Deciding what share of money to put in each stock to balance return and risk                          |
+| SLSQP                  | An optimisation method that finds the best values while respecting given limits                       |
 
 ---
 
@@ -96,19 +96,19 @@ Markowitz [8] founded modern portfolio theory: an investor should choose how muc
 
 ### 3.4 Summary
 
-| Ref | Work | What it says | How we use it |
-|---|---|---|---|
-| [1] | Harris (2003) | How exchanges and order matching work | Rules for our matching engine |
-| [2] | Gould et al. (2013) | Survey of research on order books | What a realistic order book looks like |
-| [3] | Gode and Sunder (1993) | Random traders still produce sensible prices | Basis for our robot traders |
-| [4] | Agarwalla et al. (2015) | Study of the NSE opening auction | Understanding of the Indian market |
-| [5] | Fowler (2011) | Design of the LMAX exchange | Single-thread design and replay log |
-| [6] | Byrd et al. (2020) | ABIDES market simulator | Example of a simulator with software traders |
-| [7] | Jericevich et al. (2021) | CoinTossX matching engine | Closest existing system, for another market |
-| [8] | Markowitz (1952) | Balance return against risk | Theory behind the allocation |
-| [9] | Tetlock (2007) | News tone is linked to market moves | Reason for using news sentiment |
-| [10] | Araci (2019) | FinBERT sentiment model | Scoring news about each stock |
-| [11] | Kraft (1988) | SLSQP optimisation method | Computing the allocation |
+| Ref  | Work                     | What it says                                 | How we use it                                |
+| ---- | ------------------------ | -------------------------------------------- | -------------------------------------------- |
+| [1]  | Harris (2003)            | How exchanges and order matching work        | Rules for our matching engine                |
+| [2]  | Gould et al. (2013)      | Survey of research on order books            | What a realistic order book looks like       |
+| [3]  | Gode and Sunder (1993)   | Random traders still produce sensible prices | Basis for our robot traders                  |
+| [4]  | Agarwalla et al. (2015)  | Study of the NSE opening auction             | Understanding of the Indian market           |
+| [5]  | Fowler (2011)            | Design of the LMAX exchange                  | Single-thread design and replay log          |
+| [6]  | Byrd et al. (2020)       | ABIDES market simulator                      | Example of a simulator with software traders |
+| [7]  | Jericevich et al. (2021) | CoinTossX matching engine                    | Closest existing system, for another market  |
+| [8]  | Markowitz (1952)         | Balance return against risk                  | Theory behind the allocation                 |
+| [9]  | Tetlock (2007)           | News tone is linked to market moves          | Reason for using news sentiment              |
+| [10] | Araci (2019)             | FinBERT sentiment model                      | Scoring news about each stock                |
+| [11] | Kraft (1988)             | SLSQP optimisation method                    | Computing the allocation                     |
 
 ### 3.5 Gaps identified
 
@@ -122,31 +122,31 @@ Markowitz [8] founded modern portfolio theory: an investor should choose how muc
 
 ### 4.1 Regulations that shape the project
 
-| Rule | Source | Effect on our project |
-|---|---|---|
-| Shares can be traded only on a recognised stock exchange | Securities Contracts (Regulation) Act, 1956 [12] | We build a simulator with virtual money, not a real trading platform |
-| Live prices cannot be shared with virtual trading platforms; for education, data must be at least one day old with no rewards | SEBI circular, 24 May 2024 [13] | We use previous-day data only and give no rewards |
-| Exchange data belongs to the exchange | NSE data policy | We do not upload downloaded data files to GitHub |
+| Rule                                                                                                                          | Source                                           | Effect on our project                                                |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+| Shares can be traded only on a recognised stock exchange                                                                      | Securities Contracts (Regulation) Act, 1956 [12] | We build a simulator with virtual money, not a real trading platform |
+| Live prices cannot be shared with virtual trading platforms; for education, data must be at least one day old with no rewards | SEBI circular, 24 May 2024 [13]                  | We use previous-day data only and give no rewards                    |
+| Exchange data belongs to the exchange                                                                                         | NSE data policy                                  | We do not upload downloaded data files to GitHub                     |
 
 ### 4.2 Market rules used in the simulator
 
-| Rule | Details |
-|---|---|
-| Tick size | Depends on the share price, from ₹0.01 for shares under ₹250 up to ₹5 for shares above ₹20,000 |
-| Price band | A stock cannot move more than a fixed percentage (2, 5, 10 or 20%) from the previous day's close |
-| Delivery trading | Full amount needed to buy; shares must be owned to sell |
-| Intraday trading | A margin of at least 20% is needed; positions are closed the same day |
+| Rule             | Details                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| Tick size        | Depends on the share price, from ₹0.01 for shares under ₹250 up to ₹5 for shares above ₹20,000   |
+| Price band       | A stock cannot move more than a fixed percentage (2, 5, 10 or 20%) from the previous day's close |
+| Delivery trading | Full amount needed to buy; shares must be owned to sell                                          |
+| Intraday trading | A margin of at least 20% is needed; positions are closed the same day                            |
 
 ### 4.3 Data sources
 
 All data is free.
 
-| Data | What it contains | Used for |
-|---|---|---|
-| NSE daily bhavcopy | Previous close, open, high, low, close, volume and delivery percentage for every stock | Setting up each stock in the simulator |
-| NSE price band list | Price band for every stock | Daily price limits |
-| NSE sample order and trade files [14] | 300,000 real orders and 300,000 real trades from 10 April 2024 | Checking our engine against the real exchange |
-| News and historical prices | News articles and past prices of the stocks in the portfolio | Input to the portfolio management module |
+| Data                                  | What it contains                                                                       | Used for                                      |
+| ------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------- |
+| NSE daily bhavcopy                    | Previous close, open, high, low, close, volume and delivery percentage for every stock | Setting up each stock in the simulator        |
+| NSE price band list                   | Price band for every stock                                                             | Daily price limits                            |
+| NSE sample order and trade files [14] | 300,000 real orders and 300,000 real trades from 10 April 2024                         | Checking our engine against the real exchange |
+| News and historical prices            | News articles and past prices of the stocks in the portfolio                           | Input to the portfolio management module      |
 
 We downloaded and checked the three NSE files on 11 October 2026. The NSE sample covers only part of one day, so it is used for testing and not for running a full session.
 
@@ -238,38 +238,38 @@ A user can therefore see the current state of the order book and the suggestion 
 
 ### 5.6 Tools and technologies
 
-| Part | Technology |
-|---|---|
-| Matching engine | C++ |
+| Part              | Technology                                  |
+| ----------------- | ------------------------------------------- |
+| Matching engine   | C++                                         |
 | Portfolio manager | Python, FinBERT, SLSQP optimiser from SciPy |
-| Frontend | [fill in] |
-| Version control | Git and GitHub |
+| Frontend          | [fill in]                                   |
+| Version control   | Git and GitHub                              |
 
 ### 5.7 Testing plan
 
-| What we test | How |
-|---|---|
-| Matching rules | Small hand-made examples with known answers |
-| Agreement with the real exchange | Feed NSE sample orders to our engine and compare the trades |
-| Speed | Send a large number of generated orders and measure the time |
-| Portfolio module | Check sentiment labels on sample headlines and that allocations add up to 100% |
+| What we test                     | How                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| Matching rules                   | Small hand-made examples with known answers                                    |
+| Agreement with the real exchange | Feed NSE sample orders to our engine and compare the trades                    |
+| Speed                            | Send a large number of generated orders and measure the time                   |
+| Portfolio module                 | Check sentiment labels on sample headlines and that allocations add up to 100% |
 
 ---
 
 ## 6. Work completed as of 11 October 2026
 
-| Activity | Status |
-|---|---|
-| Problem definition and scope | Completed |
-| Literature survey | Completed |
-| Study of regulations and market rules | Completed |
-| Study of free data sources | Completed |
-| System design | Completed |
-| Project plan (`PROJECT_PLAN.md`) | Completed |
-| First prototype of the order book and matching flow (`orderBook.cpp`) | In progress |
-| Portfolio management module | Developed as a separate project |
-| Integration of the portfolio module with the frontend | In progress |
-| Testing and speed measurement | Not started |
+| Activity                                                              | Status                          |
+| --------------------------------------------------------------------- | ------------------------------- |
+| Problem definition and scope                                          | Completed                       |
+| Literature survey                                                     | Completed                       |
+| Study of regulations and market rules                                 | Completed                       |
+| Study of free data sources                                            | Completed                       |
+| System design                                                         | Completed                       |
+| Project plan (`PROJECT_PLAN.md`)                                      | Completed                       |
+| First prototype of the order book and matching flow (`orderBook.cpp`) | In progress                     |
+| Portfolio management module                                           | Developed as a separate project |
+| Integration of the portfolio module with the frontend                 | In progress                     |
+| Testing and speed measurement                                         | Not started                     |
 
 ---
 
@@ -277,23 +277,23 @@ A user can therefore see the current state of the order book and the suggestion 
 
 ### 7.1 Work done so far
 
-| Date | Milestone |
-|---|---|
-| 17 June 2026 | Repository created; first prototype of the order book and matching flow |
-| 22 June 2026 | Prototype revised |
-| [fill in] | Portfolio management module developed |
+| Date            | Milestone                                                                      |
+| --------------- | ------------------------------------------------------------------------------ |
+| 17 June 2026    | Repository created; first prototype of the order book and matching flow        |
+| 22 June 2026    | Prototype revised                                                              |
+| [fill in]       | Portfolio management module developed                                          |
 | 11 October 2026 | Literature survey, study of rules and data sources, and project plan completed |
 
 ### 7.2 Plan ahead
 
-| Period | Work | Status |
-|---|---|---|
-| 12 to 18 Oct 2026 | Finalise order types, rules and message formats | Next |
-| 19 Oct to 1 Nov 2026 | Complete the matching engine and the best-five view | Planned |
-| 2 to 15 Nov 2026 | Test with NSE sample data and measure speed | Planned |
-| 16 to 29 Nov 2026 | Previous-day data loader, robot traders, delivery and intraday rules | Planned |
-| 30 Nov to 13 Dec 2026 | Frontend and integration of the portfolio module | Planned |
-| 14 to 20 Dec 2026 | Final testing, documentation and demonstration | Planned |
+| Period                | Work                                                                 | Status  |
+| --------------------- | -------------------------------------------------------------------- | ------- |
+| 12 to 18 Oct 2026     | Finalise order types, rules and message formats                      | Next    |
+| 19 Oct to 1 Nov 2026  | Complete the matching engine and the best-five view                  | Planned |
+| 2 to 15 Nov 2026      | Test with NSE sample data and measure speed                          | Planned |
+| 16 to 29 Nov 2026     | Previous-day data loader, robot traders, delivery and intraday rules | Planned |
+| 30 Nov to 13 Dec 2026 | Frontend and integration of the portfolio module                     | Planned |
+| 14 to 20 Dec 2026     | Final testing, documentation and demonstration                       | Planned |
 
 ---
 
@@ -309,12 +309,12 @@ A user can therefore see the current state of the order book and the suggestion 
 
 ## 9. Risks
 
-| Risk | How we handle it |
-|---|---|
-| Full-day order data for Indian stocks is not free | Use robot traders guided by previous-day data |
-| The NSE sample covers only part of a day | Use it only for testing the engine |
-| News sentiment may be wrong for some articles | Combine sentiment with historical price data, not sentiment alone |
-| Connecting a C++ engine and a Python module to one frontend | Agree on a simple data format between the modules early |
+| Risk                                                        | How we handle it                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------- |
+| Full-day order data for Indian stocks is not free           | Use robot traders guided by previous-day data                     |
+| The NSE sample covers only part of a day                    | Use it only for testing the engine                                |
+| News sentiment may be wrong for some articles               | Combine sentiment with historical price data, not sentiment alone |
+| Connecting a C++ engine and a Python module to one frontend | Agree on a simple data format between the modules early           |
 
 ---
 

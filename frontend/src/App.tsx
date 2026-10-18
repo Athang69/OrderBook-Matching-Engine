@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "./api/client";
 import type { Recommendation, Side } from "./api/types";
@@ -13,6 +13,7 @@ import { KeyStats } from "./components/quote/KeyStats";
 import { PriceChart } from "./components/quote/PriceChart";
 import { QuoteHeader } from "./components/quote/QuoteHeader";
 import { Watchlist } from "./components/quote/Watchlist";
+import { WhyMoved } from "./components/quote/WhyMoved";
 import { DeliveryModal } from "./components/recommendations/DeliveryModal";
 import { IntradayModal } from "./components/recommendations/IntradayModal";
 import { RecommendationsPanel } from "./components/recommendations/RecommendationsPanel";
@@ -47,9 +48,15 @@ export function App() {
   const [lastDelivery, setLastDelivery] = useState<Recommendation | null>(null);
   const [notice, setNotice] = useState("");
   const [booked, setBooked] = useState(0); // changes after each order, so "your orders" refreshes at once
+  const [whyDate, setWhyDate] = useState<string | null>(null);
   const ticket = useRef<HTMLElement>(null);
 
   const symbol = selected || watchlist[0] || "RELIANCE";
+  useEffect(() => setWhyDate(null), [symbol]);
+  const explainDay = (date: string | null) => {
+    setWhyDate(date);
+    window.setTimeout(() => document.getElementById("why")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
   const { portfolio, orders, refresh } = useAccount("demo");
   const mine = useMemo(() => {
     const out = new Set<string>();
@@ -116,8 +123,9 @@ export function App() {
         <SectionNav />
         <main id="main" className="main-col">
           <QuoteHeader instrument={instrument} quote={quote} session={session} watched={watchlist.includes(symbol)}
-            onToggleWatch={() => toggle(symbol)} onTrade={startTrade} />
-          <PriceChart symbol={symbol} quote={quote} />
+            onToggleWatch={() => toggle(symbol)} onTrade={startTrade} onWhy={() => explainDay(null)} />
+          <PriceChart symbol={symbol} quote={quote} onPickDay={explainDay} />
+          <WhyMoved symbol={symbol} date={whyDate} onDate={setWhyDate} onOpenStock={select} />
           <KeyStats instrument={instrument} quote={quote} />
           <MarketDepth instrument={instrument} quote={quote} book={book} trades={live.tape[symbol] ?? []} now={now}
             onPickPrice={(p) => setPickedPrice({ price: p, at: Date.now() })} />

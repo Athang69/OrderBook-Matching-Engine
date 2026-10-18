@@ -94,6 +94,32 @@
 
 .chart-frame svg {
   display: block;
+  user-select: none;
+}
+
+.chart-frame svg.pannable {
+  cursor: grab;
+}
+
+.chart-frame svg.pannable:active {
+  cursor: grabbing;
+}
+
+.zoom-reset {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.zoom-reset:hover {
+  background: var(--surface-3);
+  color: var(--text);
 }
 
 .chart-frame .grid {

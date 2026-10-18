@@ -8,9 +8,10 @@ interface Props {
   watched: boolean;
   onToggleWatch: () => void;
   onTrade: (side: "BUY" | "SELL") => void;
+  onWhy: () => void;
 }
 
-export function QuoteHeader({ instrument, quote, session, watched, onToggleWatch, onTrade }: Props) {
+export function QuoteHeader({ instrument, quote, session, watched, onToggleWatch, onTrade, onWhy }: Props) {
   const ltp = quote?.ltp ?? null;
   const base = quote?.prev_close ?? instrument.close;
   const change = ltp == null ? 0 : ltp - base;
@@ -37,6 +38,11 @@ export function QuoteHeader({ instrument, quote, session, watched, onToggleWatch
             <span className={`num change ${direction(change)}`}>
               {ltp == null ? "Waiting for the first price" : `${signedPrice(change)} (${percentChange(ltp, base)})`}
             </span>
+            {ltp != null && (
+              <button type="button" className="why-button" onClick={onWhy}>
+                Why {change < 0 ? "down" : "up"}? <span aria-hidden="true">→</span>
+              </button>
+            )}
           </div>
           <p className="as-of">
             {!updated ? "No price yet." : open ? `Live · last trade at ${clock(updated)} IST.` : `At close · ${dateTime(updated)} IST. ${session?.label ?? ""}.`}

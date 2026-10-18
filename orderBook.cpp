@@ -258,4 +258,7 @@ public:
             auto price = order->GetPrice();
         }
     }
+    Trades MatchOrder(OrderModify Order){
+        if(!orders_.contains(order.GetOrderId()))
+    }
 };

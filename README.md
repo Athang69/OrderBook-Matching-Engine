@@ -44,18 +44,18 @@ Outside market hours the prices shown are the last session's, orders become afte
 
 ## Project layout
 
-| Path | What it is |
-|---|---|
-| `engine/` | C++ matching engine: order book, tests, speed test |
-| `backend/app/` | Python backend: API, live feed from Yahoo Finance, market data, order management, risk checks, accounts and charges, market clock, news, intraday signals |
-| `backend/tests/` | Backend tests (they run against the real engine, without the internet) |
-| `frontend/src/` | React and TypeScript interface: `api/` (types and calls), `hooks/` (live data), `components/` by area, `styles/` |
-| `recomendation_system/` | Which stocks to buy: Markowitz portfolio optimisation (Monte Carlo and SLSQP) with your views. See its README. |
-| `scripts/run.sh` | Builds and starts everything |
-| `scripts/fetch_nse_data.py` | Downloads NSE's latest daily files |
-| `docs/DESIGN.md` | How it works inside, and why |
-| `data/`, `logs/` | Downloaded data and audit logs. Not committed. |
-| `orderBook.cpp` | The team's earlier prototype. Not used by the app. |
+| Path                        | What it is                                                                                                                                                |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine/`                   | C++ matching engine: order book, tests, speed test                                                                                                        |
+| `backend/app/`              | Python backend: API, live feed from Yahoo Finance, market data, order management, risk checks, accounts and charges, market clock, news, intraday signals |
+| `backend/tests/`            | Backend tests (they run against the real engine, without the internet)                                                                                    |
+| `frontend/src/`             | React and TypeScript interface: `api/` (types and calls), `hooks/` (live data), `components/` by area, `styles/`                                          |
+| `recomendation_system/`     | Which stocks to buy: Markowitz portfolio optimisation (Monte Carlo and SLSQP) with your views. See its README.                                            |
+| `scripts/run.sh`            | Builds and starts everything                                                                                                                              |
+| `scripts/fetch_nse_data.py` | Downloads NSE's latest daily files                                                                                                                        |
+| `docs/DESIGN.md`            | How it works inside, and why                                                                                                                              |
+| `data/`, `logs/`            | Downloaded data and audit logs. Not committed.                                                                                                            |
+| `orderBook.cpp`             | The team's earlier prototype. Not used by the app.                                                                                                        |
 
 ## Tests and speed test
 
@@ -70,26 +70,26 @@ cmake -S engine -B engine/build && cmake --build engine/build
 
 Prices are integers in paise, so Rs 1,179.40 is `117940`.
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/v1/status` | Market session (open, pre-open, closed) and live feed health |
-| GET | `/v1/market/symbols` | Every NSE stock that can be traded, with its rules for the day |
-| GET | `/v1/market/instrument/{symbol}` | One stock's rules and live quote |
-| GET | `/v1/market/quotes?symbols=` | Live quotes |
-| GET | `/v1/market/chart/{symbol}?range=1d` | Price bars: `1d`, `5d`, `1mo`, `6mo`, `1y`, `5y` |
-| GET | `/v1/market/sparklines?symbols=` | Today's price in about 75 points per stock |
-| GET | `/v1/market/trades/{symbol}` | Latest real trades |
-| GET | `/v1/market/orderbook/{symbol}` | Real best bid and offer, and your orders in the engine |
-| GET | `/v1/market/indices` | NIFTY 50, SENSEX, NIFTY BANK |
-| POST | `/v1/orders` | Place an order |
-| DELETE | `/v1/orders/{id}` | Cancel an open order |
-| GET | `/v1/orders/{id}`, `/v1/orders` | One order with its fills; your orders |
-| GET | `/v1/portfolio/{user}` | Cash, holdings, intraday positions, profit and loss, charges |
-| POST | `/v1/portfolio/{user}/squareoff` | Close all intraday positions |
-| POST | `/v1/recommendations` | Which of the chosen stocks to buy, with your confidence in each |
-| POST | `/v1/recommendations/intraday` | Buy, sell short or stay out now, from live signals and your views |
-| GET | `/v1/news?symbols=` | The three latest headlines for each stock |
-| WebSocket | `/v1/stream/marketdata` | Send `{"subscribe": ["RELIANCE", ...]}`; live quotes and trades are pushed |
+| Method    | Path                                 | Purpose                                                                    |
+| --------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| GET       | `/v1/status`                         | Market session (open, pre-open, closed) and live feed health               |
+| GET       | `/v1/market/symbols`                 | Every NSE stock that can be traded, with its rules for the day             |
+| GET       | `/v1/market/instrument/{symbol}`     | One stock's rules and live quote                                           |
+| GET       | `/v1/market/quotes?symbols=`         | Live quotes                                                                |
+| GET       | `/v1/market/chart/{symbol}?range=1d` | Price bars: `1d`, `5d`, `1mo`, `6mo`, `1y`, `5y`                           |
+| GET       | `/v1/market/sparklines?symbols=`     | Today's price in about 75 points per stock                                 |
+| GET       | `/v1/market/trades/{symbol}`         | Latest real trades                                                         |
+| GET       | `/v1/market/orderbook/{symbol}`      | Real best bid and offer, and your orders in the engine                     |
+| GET       | `/v1/market/indices`                 | NIFTY 50, SENSEX, NIFTY BANK                                               |
+| POST      | `/v1/orders`                         | Place an order                                                             |
+| DELETE    | `/v1/orders/{id}`                    | Cancel an open order                                                       |
+| GET       | `/v1/orders/{id}`, `/v1/orders`      | One order with its fills; your orders                                      |
+| GET       | `/v1/portfolio/{user}`               | Cash, holdings, intraday positions, profit and loss, charges               |
+| POST      | `/v1/portfolio/{user}/squareoff`     | Close all intraday positions                                               |
+| POST      | `/v1/recommendations`                | Which of the chosen stocks to buy, with your confidence in each            |
+| POST      | `/v1/recommendations/intraday`       | Buy, sell short or stay out now, from live signals and your views          |
+| GET       | `/v1/news?symbols=`                  | The three latest headlines for each stock                                  |
+| WebSocket | `/v1/stream/marketdata`              | Send `{"subscribe": ["RELIANCE", ...]}`; live quotes and trades are pushed |
 
 Interactive API documentation is at <http://localhost:8000/docs> while the server runs.
 
@@ -112,12 +112,12 @@ cd frontend && npm run dev     # frontend with live reload on port 5173
 
 ## Data, and using it responsibly
 
-| Data | From |
-|---|---|
-| Live prices, quotes, charts, indices | Yahoo Finance (free, no account), about two seconds behind NSE |
-| List of stocks, price bands, tick sizes | NSE's daily files, downloaded to `data/nse/` |
-| Price history for recommendations | Yahoo Finance via `yfinance`, cached in `data/history/` |
-| News headlines | Google News |
+| Data                                    | From                                                           |
+| --------------------------------------- | -------------------------------------------------------------- |
+| Live prices, quotes, charts, indices    | Yahoo Finance (free, no account), about two seconds behind NSE |
+| List of stocks, price bands, tick sizes | NSE's daily files, downloaded to `data/nse/`                   |
+| Price history for recommendations       | Yahoo Finance via `yfinance`, cached in `data/history/`        |
+| News headlines                          | Google News                                                    |
 
 Neither data folder is committed. Yahoo's data is for personal use, and SEBI does not allow live exchange prices to be passed on to others for virtual trading or games. Run the app on your own computer for your own study; do not host it for other people.
 

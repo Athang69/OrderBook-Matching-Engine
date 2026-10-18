@@ -1,6 +1,6 @@
 // Calls to the REST API.
 import type {
-  Chart, ChartRange, Confidences, InstrumentDetail, IntradayRecommendation, NewOrder, NewsResponse, Order, Portfolio,
+  Analysis, Chart, ChartRange, Confidences, Explanation, InstrumentDetail, IntradayRecommendation, NewOrder, NewsResponse, Order, Portfolio,
   PricePoint, Quote, Recommendation, SymbolList, TopOfBook,
 } from "./types";
 
@@ -42,6 +42,9 @@ export const api = {
   portfolio: (user: string) => request<Portfolio>(`/v1/portfolio/${user}`),
   squareOff: (user: string) => request<Order[]>(`/v1/portfolio/${user}/squareoff`, { method: "POST" }),
   news: (symbols: string[]) => request<NewsResponse>(`/v1/news?${many("symbols", symbols)}`),
+  explain: (symbol: string, date: string | null) =>
+    request<Explanation>(`/v1/explain/${path(symbol)}${date ? `?date=${date}` : ""}`),
+  analysis: (symbol: string, date: string) => request<Analysis>(`/v1/analysis/${path(symbol)}?date=${date}`),
   recommend: (symbols: string[], confidences: Confidences, budget: number) =>
     request<Recommendation>("/v1/recommendations", post({ symbols, confidences, budget })),
   recommendIntraday: (symbols: string[], confidences: Confidences, budget: number) =>

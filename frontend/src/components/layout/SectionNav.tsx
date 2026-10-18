@@ -3,6 +3,7 @@ import { useActiveSection } from "../../hooks/useActiveSection";
 export const SECTIONS: [string, string][] = [
   ["summary", "Summary"],
   ["chart", "Chart"],
+  ["why", "Why it moved"],
   ["depth", "Order book"],
   ["news", "News"],
   ["recommendations", "Recommendations"],
