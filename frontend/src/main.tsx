@@ -12,6 +12,7 @@ import "./styles/trading.css";
 import "./styles/news.css";
 import "./styles/recommendations.css";
 import "./styles/why.css";
+import "./styles/global.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -5,7 +5,7 @@ REST (prices are integers in paise):
   GET    /v1/market/symbols                 every NSE stock that can be traded: symbol, name, series, rules
   GET    /v1/market/instrument/{symbol}     one stock's rules for the day and its live quote
   GET    /v1/market/quotes?symbols=         live quotes for several stocks
-  GET    /v1/market/chart/{symbol}?range=   price bars: 1d, 5d, 1mo, 6mo, 1y or 5y
+  GET    /v1/market/chart/{symbol}?range=   price bars: 1d, 5d, 15m, 1h, 1mo, 6mo, 1y or 5y
   GET    /v1/market/sparklines?symbols=     today's price in about 75 points per stock, for small charts
   GET    /v1/market/trades/{symbol}         the latest real trades
   GET    /v1/market/orderbook/{symbol}      real best bid and offer, and your orders waiting in the engine
@@ -33,6 +33,12 @@ import sys
 import threading
 import time
 from typing import Literal
+
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv()
+except ImportError:
+    pass
 
 from fastapi import FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,6 +68,8 @@ BARS_PER_POLL = 4  # first-time chart loads per quote poll, so a long watchlist 
 REFERENCE_REFRESH = ((8, 45), (19, 0))  # Indian times to download NSE's newest files for the next session
 CHART_RANGES = ("1d", "5d", "1mo", "6mo", "1y", "5y")
 INDEX_BY_TICKER = {ticker: name for name, ticker in config.INDICES.items()}
+GLOBAL_CHART_CACHE: dict[tuple[str, str, str], tuple[float, dict]] = {}
+GLOBAL_CHART_TTL = 300
 
 
 class Simulator:
@@ -178,7 +186,7 @@ class Simulator:
 
     def load_bars(self, symbol: str) -> None:
         """Today's one-minute bars (the last session's when the market is closed). Blocks."""
-        chart = self.yahoo.chart(to_yahoo(symbol), "1d")
+        chart = self.yahoo.chart(to_yahoo(symbol), "1d", "1m")
         self.market.set_bars(symbol, chart["bars"])
         self.bars_loaded[symbol] = self.session()["trading_day"]
 
@@ -200,7 +208,8 @@ class Simulator:
         backoff = config.QUOTE_POLL_SECONDS
         while True:
             symbols = self.wanted()
-            tickers = [to_yahoo(s) for s in symbols] + list(config.INDICES.values())
+            index_tickers = list(config.INDICES.values())
+            tickers = [to_yahoo(s) for s in symbols] + index_tickers
             self.stream.set_tickers(tickers)
             try:
                 quotes = await asyncio.to_thread(self.yahoo.quotes, tickers)
@@ -398,26 +407,34 @@ async def quotes(symbols: list[str] = Query(..., min_length=1, max_length=MAX_SU
     return sim().market.snapshots(wanted)
 
 
+VALID_CHART_RANGES = {"1d", "5d", "1mo", "3mo", "6mo", "ytd", "1y", "5y", "max"}
+VALID_CHART_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "1h", "1d", "1wk", "1mo"}
+
 @app.get("/v1/market/chart/{symbol}")
-async def chart(symbol: str, range: Literal["1d", "5d", "1mo", "6mo", "1y", "5y"] = "1d") -> dict:
-    """Price bars [time, open, high, low, close, volume]. Today's come from memory and move with the stream."""
+async def chart(symbol: str, range: str = "1d", interval: str = "1m") -> dict:
+    """Price bars [time, open, high, low, close, volume]. Today's 1m bars come from memory; everything else from Yahoo."""
+    if range not in VALID_CHART_RANGES:
+        raise HTTPException(422, f"Invalid range: {range}")
+    if interval not in VALID_CHART_INTERVALS:
+        raise HTTPException(422, f"Invalid interval: {interval}")
     symbol = require_symbol(symbol)
     s = sim()
     s.touch([symbol])
-    if range == "1d":
+    if range == "1d" and interval == "1m":
         if s.bars_loaded.get(symbol) != s.session()["trading_day"] and s.live:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(s.load_bars, symbol)
         quote = s.market.snapshot(symbol)
-        return {"symbol": symbol, "range": range, "interval": "1m", "bars": s.market.bars(symbol),
+        return {"symbol": symbol, "range": range, "interval": interval, "bars": s.market.bars(symbol),
                 "prev_close": quote["prev_close"]}
-    key = (symbol, range)
+    key = (symbol, range, interval)
     cached = s.charts.get(key)
-    if cached is None or time.time() - cached[0] > config.CHART_CACHE_SECONDS[range]:
+    cache_ttl = config.CHART_CACHE_SECONDS.get(interval, 3600)
+    if cached is None or time.time() - cached[0] > cache_ttl:
         if not s.live:
             raise HTTPException(503, "Charts need the live data feed, which is switched off.")
         try:
-            data = await asyncio.to_thread(s.yahoo.chart, to_yahoo(symbol), range)
+            data = await asyncio.to_thread(s.yahoo.chart, to_yahoo(symbol), range, interval)
         except Exception as err:
             if cached is None:
                 raise HTTPException(502, f"Could not load the chart from Yahoo Finance ({type(err).__name__}).") from None
@@ -426,7 +443,7 @@ async def chart(symbol: str, range: Literal["1d", "5d", "1mo", "6mo", "1y", "5y"
             s.charts[key] = (time.time(), data)
     else:
         data = cached[1]
-    return {"symbol": symbol, "range": range, "interval": None, "bars": data["bars"], "prev_close": data["prev_close"]}
+    return {"symbol": symbol, "range": range, "interval": interval, "bars": data["bars"], "prev_close": data["prev_close"]}
 
 
 @app.get("/v1/market/sparklines")
@@ -463,6 +480,104 @@ def orderbook(symbol: str) -> dict:
 @app.get("/v1/market/indices")
 def indices() -> list[dict]:
     return sim().market.indices()
+
+
+@app.get("/v1/market/indices/all")
+def all_indices() -> dict:
+    """Every tracked index, grouped by region, with live prices."""
+    s = sim()
+    all_data = {}
+    for group, names in config.INDEX_GROUPS.items():
+        items = []
+        for name in names:
+            idx = next((i for i in s.market.indices() if i["name"] == name), None)
+            ticker = config.INDICES.get(name)
+            items.append({"name": name, "ticker": ticker, **(idx or {"ltp": None, "prev_close": None, "high": None, "low": None, "time": None})})
+        all_data[group] = items
+    return {"groups": all_data, "strip": config.STRIP_INDICES}
+
+
+# ---- global market data (any exchange, view-only) ----
+
+@app.get("/v1/global/search")
+async def global_search(q: str = Query(..., min_length=1, max_length=100), count: int = Query(20, ge=1, le=50)) -> dict:
+    """Search Yahoo Finance for any stock, ETF, index, future or crypto worldwide."""
+    if not sim().live:
+        raise HTTPException(503, "Search needs the live data feed.")
+    try:
+        results = await asyncio.to_thread(sim().yahoo.search, q, count)
+    except Exception as err:
+        raise HTTPException(502, f"Yahoo search failed ({type(err).__name__}).") from None
+    return {"query": q, "count": len(results), "results": results}
+
+
+@app.get("/v1/global/quote")
+async def global_quote(tickers: list[str] = Query(..., min_length=1, max_length=50, alias="t")) -> dict:
+    """Live quotes for any Yahoo ticker(s). Prices are floats in the instrument's own currency."""
+    if not sim().live:
+        raise HTTPException(503, "Quotes need the live data feed.")
+    cleaned = list(dict.fromkeys(t.strip() for t in tickers))
+    try:
+        quotes = await asyncio.to_thread(sim().yahoo.global_quotes, cleaned)
+    except Exception as err:
+        raise HTTPException(502, f"Could not fetch quotes ({type(err).__name__}).") from None
+    return {"count": len(quotes), "quotes": quotes}
+
+
+@app.get("/v1/global/chart/{ticker:path}")
+async def global_chart(ticker: str, range: str = "1d", interval: str = "1m") -> dict:
+    """Price chart for any Yahoo ticker. Prices are floats."""
+    if range not in VALID_CHART_RANGES:
+        raise HTTPException(422, f"Invalid range: {range}")
+    if interval not in VALID_CHART_INTERVALS:
+        raise HTTPException(422, f"Invalid interval: {interval}")
+    if not sim().live:
+        raise HTTPException(503, "Charts need the live data feed.")
+    ticker = ticker.strip()
+    key = (ticker, range, interval)
+    cached = GLOBAL_CHART_CACHE.get(key)
+    if cached and time.time() - cached[0] < GLOBAL_CHART_TTL:
+        data = cached[1]
+    else:
+        try:
+            data = await asyncio.to_thread(sim().yahoo.global_chart, ticker, range, interval)
+        except Exception as err:
+            if cached:
+                data = cached[1]
+            else:
+                raise HTTPException(502, f"Could not load chart from Yahoo ({type(err).__name__}).") from None
+        GLOBAL_CHART_CACHE[key] = (time.time(), data)
+    return {"ticker": ticker, "range": range, "interval": interval, **data}
+
+
+@app.get("/v1/global/profile/{ticker:path}")
+async def global_profile(ticker: str) -> dict:
+    """Company profile for any Yahoo ticker."""
+    if not sim().live:
+        raise HTTPException(503, "Profiles need the live data feed.")
+    try:
+        profile = await asyncio.to_thread(sim().yahoo.profile, ticker.strip())
+    except Exception as err:
+        raise HTTPException(502, f"Could not load profile ({type(err).__name__}).") from None
+    return {"ticker": ticker.strip(), **profile}
+
+
+@app.get("/v1/global/similar/{ticker:path}")
+async def global_similar(ticker: str) -> dict:
+    """Similar stocks for any Yahoo ticker."""
+    if not sim().live:
+        raise HTTPException(503, "Similar companies need the live data feed.")
+    try:
+        similar = await asyncio.to_thread(sim().yahoo.similar, ticker.strip())
+    except Exception as err:
+        raise HTTPException(502, f"Could not load similar stocks ({type(err).__name__}).") from None
+    return {"ticker": ticker.strip(), "similar": similar}
+
+
+@app.get("/v1/global/exchanges")
+def exchanges() -> dict:
+    """The supported exchange suffixes for Yahoo Finance tickers."""
+    return {"exchanges": config.EXCHANGE_SUFFIXES}
 
 
 # ---- orders ----

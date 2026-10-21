@@ -37,6 +37,9 @@ RESUBSCRIBE_SECONDS = 15  # the stream stops sending to clients that do not repe
 CHART_INTERVALS = {"1d": "1m", "5d": "5m", "1mo": "30m", "6mo": "1d", "1y": "1d", "5y": "1wk"}
 
 
+SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+
+
 def to_yahoo(symbol: str) -> str:
     """NSE symbol to Yahoo ticker: RELIANCE -> RELIANCE.NS. Index tickers (^NSEI) pass through."""
     return symbol if symbol.startswith("^") else f"{symbol}.NS"
@@ -51,6 +54,62 @@ def paise(value) -> int | None:
     if isinstance(value, (int, float)) and value > 0:
         return int(round(value * 100))
     return None
+
+
+def as_float(value) -> float | None:
+    if isinstance(value, (int, float)) and value != 0:
+        return round(float(value), 4)
+    return None
+
+
+def parse_global_quote(q: dict) -> dict:
+    """A Yahoo quote kept as floats in the original currency, for non-INR instruments."""
+    return {
+        "ticker": q.get("symbol"),
+        "name": q.get("longName") or q.get("shortName"),
+        "price": as_float(q.get("regularMarketPrice")),
+        "prev_close": as_float(q.get("regularMarketPreviousClose")),
+        "open": as_float(q.get("regularMarketOpen")),
+        "high": as_float(q.get("regularMarketDayHigh")),
+        "low": as_float(q.get("regularMarketDayLow")),
+        "volume": int(q.get("regularMarketVolume") or 0),
+        "bid": as_float(q.get("bid")),
+        "ask": as_float(q.get("ask")),
+        "change": as_float(q.get("regularMarketChange")),
+        "change_pct": as_float(q.get("regularMarketChangePercent")),
+        "market_cap": int(q["marketCap"]) if q.get("marketCap") else None,
+        "pe": round(float(q["trailingPE"]), 2) if q.get("trailingPE") else None,
+        "eps": round(float(q["epsTrailingTwelveMonths"]), 2) if q.get("epsTrailingTwelveMonths") else None,
+        "dividend_yield": round(float(q["dividendYield"]), 2) if q.get("dividendYield") else None,
+        "week52_high": as_float(q.get("fiftyTwoWeekHigh")),
+        "week52_low": as_float(q.get("fiftyTwoWeekLow")),
+        "avg_volume": int(q.get("averageDailyVolume3Month") or 0) or None,
+        "market_state": q.get("marketState"),
+        "exchange": q.get("exchange"),
+        "currency": q.get("currency"),
+        "quote_type": q.get("quoteType"),
+        "quote_time": int(q.get("regularMarketTime") or 0) or None,
+    }
+
+
+def parse_global_chart(result: dict) -> dict:
+    """Chart bars as [time, open, high, low, close, volume] with prices as floats."""
+    times = result.get("timestamp") or []
+    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+    bars = []
+    for i, t in enumerate(times):
+        o, h, l, c = (quote.get(k, [None] * len(times))[i] for k in ("open", "high", "low", "close"))
+        if c is None or o is None:
+            continue
+        v = (quote.get("volume") or [0] * len(times))[i] or 0
+        bars.append([int(t), round(float(o), 4), round(float(h), 4), round(float(l), 4), round(float(c), 4), int(v)])
+    meta = result.get("meta", {})
+    return {
+        "bars": bars,
+        "prev_close": as_float(meta.get("chartPreviousClose") or meta.get("previousClose")),
+        "currency": meta.get("currency"),
+        "exchange": meta.get("exchangeName"),
+    }
 
 
 def parse_quote(q: dict) -> dict:
@@ -128,8 +187,8 @@ class YahooClient:
                 out[q["symbol"]] = parse_quote(q)
         return out
 
-    def chart(self, ticker: str, range_: str) -> dict:
-        reply = self._get(CHART_URL + ticker, {"range": range_, "interval": CHART_INTERVALS[range_],
+    def chart(self, ticker: str, range_: str, interval: str) -> dict:
+        reply = self._get(CHART_URL + ticker, {"range": range_, "interval": interval,
                                                "includePrePost": "false"})
         results = (reply.get("chart") or {}).get("result") or []
         if not results:
@@ -150,6 +209,40 @@ class YahooClient:
         reply = self._get(SIMILAR_URL + ticker, {})
         results = (reply.get("finance") or {}).get("result") or [{}]
         return [r["symbol"] for r in results[0].get("recommendedSymbols") or [] if r.get("symbol")]
+
+    def global_quotes(self, tickers: Iterable[str]) -> dict[str, dict]:
+        """Quotes for any Yahoo-supported ticker, returned as floats in the original currency."""
+        tickers = list(dict.fromkeys(tickers))
+        out: dict[str, dict] = {}
+        for start in range(0, len(tickers), QUOTES_PER_REQUEST):
+            chunk = tickers[start:start + QUOTES_PER_REQUEST]
+            reply = self._get(QUOTE_URL, {"symbols": ",".join(chunk)})
+            for q in (reply.get("quoteResponse") or {}).get("result") or []:
+                out[q["symbol"]] = parse_global_quote(q)
+        return out
+
+    def global_chart(self, ticker: str, range_: str, interval: str) -> dict:
+        """Chart for any Yahoo ticker, prices as floats."""
+        reply = self._get(CHART_URL + ticker, {"range": range_, "interval": interval, "includePrePost": "false"})
+        results = (reply.get("chart") or {}).get("result") or []
+        if not results:
+            raise LookupError(f"no chart data for {ticker}")
+        return parse_global_chart(results[0])
+
+    def search(self, query: str, count: int = 20) -> list[dict]:
+        """Search Yahoo Finance for stocks, ETFs, indices, futures, crypto."""
+        reply = self._get(SEARCH_URL, {"q": query, "quotesCount": count, "newsCount": 0,
+                                        "enableFuzzyQuery": "true", "quotesQueryId": "tss_match_phrase_query"})
+        results = []
+        for q in (reply.get("quotes") or []):
+            results.append({
+                "ticker": q.get("symbol"),
+                "name": q.get("longname") or q.get("shortname"),
+                "exchange": q.get("exchDisp") or q.get("exchange"),
+                "type": q.get("quoteType"),
+                "score": q.get("score", 0),
+            })
+        return results
 
 
 class YahooStream:

@@ -19,11 +19,69 @@ DELIVERY_ONLY_SERIES = ("BE",)
 
 # Shown first, until the user builds their own watchlist in the browser.
 DEFAULT_WATCHLIST = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "SBIN", "ITC", "LT"]
-INDICES = {"NIFTY 50": "^NSEI", "SENSEX": "^BSESN", "NIFTY BANK": "^NSEBANK"}
+INDICES = {
+    # India
+    "NIFTY 50": "^NSEI", "SENSEX": "^BSESN", "NIFTY BANK": "^NSEBANK",
+    "NIFTY IT": "^CNXIT", "NIFTY PHARMA": "^CNXPHARMA", "NIFTY AUTO": "^CNXAUTO",
+    "NIFTY FMCG": "^CNXFMCG", "NIFTY METAL": "^CNXMETAL", "NIFTY REALTY": "^CNXREALTY",
+    "NIFTY ENERGY": "^CNXENERGY", "NIFTY INFRA": "^CNXINFRA", "NIFTY PSE": "^CNXPSE",
+    "NIFTY MIDCAP 50": "^NSEMDCP50", "NIFTY NEXT 50": "^NSMIDCP",
+    "INDIA VIX": "^INDIAVIX",
+    # US
+    "S&P 500": "^GSPC", "NASDAQ": "^IXIC", "DOW JONES": "^DJI",
+    "RUSSELL 2000": "^RUT", "S&P 500 VIX": "^VIX",
+    "NASDAQ 100": "^NDX", "S&P MIDCAP 400": "^MID",
+    # Europe
+    "FTSE 100": "^FTSE", "DAX": "^GDAXI", "CAC 40": "^FCHI",
+    "EURO STOXX 50": "^STOXX50E", "IBEX 35": "^IBEX", "AEX": "^AEX",
+    "SMI": "^SSMI", "FTSE MIB": "FTSEMIB.MI",
+    # Asia-Pacific
+    "NIKKEI 225": "^N225", "HANG SENG": "^HSI", "SHANGHAI": "000001.SS",
+    "KOSPI": "^KS11", "TAIWAN WEIGHTED": "^TWII", "ASX 200": "^AXJO",
+    "STI": "^STI", "JAKARTA": "^JKSE",
+    # Commodities
+    "GOLD": "GC=F", "SILVER": "SI=F", "CRUDE OIL": "CL=F",
+    "BRENT CRUDE": "BZ=F", "NATURAL GAS": "NG=F", "COPPER": "HG=F",
+    # Crypto
+    "BITCOIN": "BTC-USD", "ETHEREUM": "ETH-USD", "SOLANA": "SOL-USD",
+    # Currencies
+    "USD/INR": "INR=X", "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "JPY=X", "DOLLAR INDEX": "DX-Y.NYB",
+    # Bonds
+    "US 10Y YIELD": "^TNX", "US 2Y YIELD": "^IRX",
+}
+
+INDEX_GROUPS = {
+    "India": ["NIFTY 50", "SENSEX", "NIFTY BANK", "NIFTY IT", "NIFTY PHARMA", "NIFTY AUTO",
+              "NIFTY FMCG", "NIFTY METAL", "NIFTY REALTY", "NIFTY ENERGY", "NIFTY INFRA",
+              "NIFTY PSE", "NIFTY MIDCAP 50", "NIFTY NEXT 50", "INDIA VIX"],
+    "US": ["S&P 500", "NASDAQ", "DOW JONES", "NASDAQ 100", "RUSSELL 2000", "S&P MIDCAP 400", "S&P 500 VIX"],
+    "Europe": ["FTSE 100", "DAX", "CAC 40", "EURO STOXX 50", "IBEX 35", "AEX", "SMI", "FTSE MIB"],
+    "Asia-Pacific": ["NIKKEI 225", "HANG SENG", "SHANGHAI", "KOSPI", "TAIWAN WEIGHTED", "ASX 200", "STI", "JAKARTA"],
+    "Commodities": ["GOLD", "SILVER", "CRUDE OIL", "BRENT CRUDE", "NATURAL GAS", "COPPER"],
+    "Crypto": ["BITCOIN", "ETHEREUM", "SOLANA"],
+    "Currencies": ["USD/INR", "EUR/USD", "GBP/USD", "USD/JPY", "DOLLAR INDEX"],
+    "Bonds": ["US 10Y YIELD", "US 2Y YIELD"],
+}
+
+STRIP_INDICES = ["NIFTY 50", "SENSEX", "NIFTY BANK", "S&P 500", "NASDAQ", "DOW JONES",
+                 "GOLD", "CRUDE OIL", "BITCOIN", "USD/INR"]
+
+EXCHANGE_SUFFIXES = {
+    "NSE": ".NS", "BSE": ".BO",
+    "NYSE": "", "NASDAQ": "", "AMEX": "",
+    "LSE": ".L", "XETRA": ".DE", "PARIS": ".PA",
+    "TOKYO": ".T", "HKEX": ".HK", "SSE": ".SS", "SZSE": ".SZ",
+    "KRX": ".KS", "TWSE": ".TW", "ASX": ".AX",
+    "SGX": ".SI", "JSE": ".JO",
+}
 
 QUOTE_POLL_SECONDS = 5  # best bid and offer, day range, 52-week range, valuation (Yahoo limits how often)
 MAX_LIVE_SYMBOLS = 100  # stocks streamed at once: the watchlist, the one on screen, open orders and positions
-CHART_CACHE_SECONDS = {"1d": 60, "5d": 300, "1mo": 900, "6mo": 3600, "1y": 3600, "5y": 3600}
+CHART_CACHE_SECONDS = {
+    "1m": 60, "2m": 60, "5m": 120, "15m": 300, "30m": 300,
+    "1h": 900, "1d": 3600, "1wk": 3600, "1mo": 3600,
+}
 
 # Stocks that trade in derivatives have no fixed band at NSE ("No Band"); they start the day with
 # a 10% operating range, which is what is applied to them here.

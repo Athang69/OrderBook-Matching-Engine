@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
-import type { Bar, Chart, ChartRange, Quote } from "../api/types";
+import type { Bar, Chart, ChartInterval, ChartRange, Quote } from "../api/types";
 
-const REFRESH_MS: Record<ChartRange, number> = { "1d": 60_000, "5d": 300_000, "1mo": 900_000, "6mo": 3_600_000, "1y": 3_600_000, "5y": 3_600_000 };
+function refreshMs(interval: ChartInterval): number {
+  if (interval === "1m" || interval === "2m") return 60_000;
+  if (interval === "5m") return 300_000;
+  if (interval === "15m" || interval === "30m") return 900_000;
+  return 3_600_000;
+}
 
-/**
- * Price bars for the chosen range. Today's chart is refreshed every minute and its last bar follows the
- * live price in between, so the line moves as the stock trades.
- */
-export function useChart(symbol: string, range: ChartRange, quote: Quote | undefined) {
+export function useChart(symbol: string, range: ChartRange, interval: ChartInterval, quote: Quote | undefined) {
   const [chart, setChart] = useState<Chart | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -19,7 +20,7 @@ export function useChart(symbol: string, range: ChartRange, quote: Quote | undef
     let cancelled = false;
     const load = (first: boolean) => {
       if (first) setLoading(true);
-      api.chart(symbol, range)
+      api.chart(symbol, range, interval)
         .then((data) => {
           if (cancelled) return;
           setChart(data);
@@ -30,17 +31,17 @@ export function useChart(symbol: string, range: ChartRange, quote: Quote | undef
     };
     setChart(null);
     load(true);
-    const timer = window.setInterval(() => load(false), REFRESH_MS[range]);
+    const timer = window.setInterval(() => load(false), refreshMs(interval));
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [symbol, range]);
+  }, [symbol, range, interval]);
 
   let bars: Bar[] = chart && chart.symbol === symbol && chart.range === range ? chart.bars : [];
   const ltp = quote?.ltp;
   const at = quote?.tick_time ?? quote?.polled_at;
-  if (range === "1d" && bars.length && ltp != null && at != null) {
+  if (range === "1d" && interval === "1m" && bars.length && ltp != null && at != null) {
     const minute = Math.floor(at / 60) * 60;
     const last = bars[bars.length - 1];
     if (minute === last[0]) {

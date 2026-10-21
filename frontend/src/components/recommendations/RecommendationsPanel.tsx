@@ -2,8 +2,6 @@ import { useMemo } from "react";
 
 import type { Portfolio, Recommendation } from "../../api/types";
 import { useIntradaySignals } from "../../hooks/useIntradaySignals";
-import { SignalBar } from "../ui/SignalBar";
-import { ACTION_LABEL } from "./IntradayModal";
 
 interface Props {
   watchlist: string[];
@@ -15,72 +13,96 @@ interface Props {
 
 const PREVIEW_MARGIN = 50_000 * 100;
 
-/** The two recommendation tools side by side, with a live preview of the strongest signals in your watchlist. */
 export function RecommendationsPanel({ watchlist, portfolio, lastDelivery, onOpenDelivery, onOpenIntraday }: Props) {
   const available = portfolio?.available ?? 0;
   const key = watchlist.slice(0, 20).join(",");
   const query = useMemo(
     () => (key && available > 0 ? { symbols: key.split(","), confidences: {}, budget: Math.min(PREVIEW_MARGIN, available) } : null),
-    // Re-ask only when the watchlist changes or cash crosses the preview amount, not on every cash update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [key, available >= PREVIEW_MARGIN, available > 0],
   );
   const signals = useIntradaySignals(query, true, 2000);
-  const top = signals.data
-    ? [...signals.data.stocks].filter((s) => s.model_score != null).sort((a, b) => Math.abs(b.model_score ?? 0) - Math.abs(a.model_score ?? 0)).slice(0, 4)
+  // Only show actual BUY/SELL signals, sorted by absolute score
+  const actionSignals = signals.data
+    ? [...signals.data.stocks]
+        .filter((s) => s.action === "BUY" || s.action === "SELL")
+        .sort((a, b) => Math.abs(b.model_score ?? 0) - Math.abs(a.model_score ?? 0))
+        .slice(0, 4)
     : [];
+  // Fallback: show top scored stocks when market closed
+  const topScored = signals.data && actionSignals.length === 0
+    ? [...signals.data.stocks]
+        .filter((s) => s.model_score != null)
+        .sort((a, b) => Math.abs(b.model_score ?? 0) - Math.abs(a.model_score ?? 0))
+        .slice(0, 4)
+    : [];
+  const displaySignals = actionSignals.length > 0 ? actionSignals : topScored;
   const buys = lastDelivery?.stocks.filter((s) => s.decision === "BUY") ?? [];
 
   return (
     <section className="section" id="recommendations" aria-labelledby="rec-title">
-      <h2 id="rec-title" className="section-title">Recommendations</h2>
+      <div className="section-head">
+        <h2 id="rec-title" className="section-title">AI Ideas</h2>
+      </div>
       <div className="rec-grid">
-        <article className="card rec-card">
-          <div className="rec-card-head">
-            <h3>Delivery</h3>
-            <span className="chip">Your views + portfolio optimisation</span>
-          </div>
-          <p className="muted">
-            Which stocks to buy and hold, and how much money each should get. You read each stock's latest news and say how
-            confident you are in it; the optimiser (20,000 random portfolios and SLSQP on prices since 2015) combines your views
-            with the history, then re-runs 200 times to check how stable each pick is.
-          </p>
-          {lastDelivery && (
-            <p className="rec-last">
-              Last result: {buys.length ? `buy ${buys.map((s) => s.symbol).join(", ")}` : "no stock was picked often enough"}.
-            </p>
+
+        {/* Delivery card */}
+        <article className="rec-card">
+          <div className="rec-card-label">Portfolio optimisation</div>
+          <h3 className="rec-card-title">Delivery</h3>
+          <p className="rec-card-desc">Allocate capital across your watchlist based on confidence views and risk-adjusted returns.</p>
+          {lastDelivery && buys.length > 0 && (
+            <div className="rec-last-result">
+              <span className="muted small">Last picks</span>
+              <span className="small strong">{buys.map((s) => s.symbol).join(" · ")}</span>
+            </div>
           )}
-          <button type="button" className="button primary" onClick={onOpenDelivery}>Get delivery ideas</button>
+          <button type="button" className="button primary small" onClick={onOpenDelivery} style={{ marginTop: "auto" }}>
+            Get ideas
+          </button>
         </article>
 
-        <article className="card rec-card">
-          <div className="rec-card-head">
-            <h3>Intraday</h3>
-            <span className="chip">Your views + live signals</span>
-            {signals.data && <span className="chip quiet" title="Server time for the last update">{(signals.data.timing.total_us / 1000).toFixed(2)} ms</span>}
+        {/* Intraday card */}
+        <article className="rec-card">
+          <div className="rec-card-label">
+            Live signals
+            {signals.data && (
+              <span className="rec-latency">{(signals.data.timing.total_us / 1000).toFixed(1)} ms</span>
+            )}
           </div>
-          <p className="muted">
-            Buy, sell short or stay out, from today's real trading (momentum, VWAP, trade flow) and your own view of each stock.
-            Strongest live signals in your watchlist, before your views:
-          </p>
-          {!query && <p className="muted small">Add stocks to your watchlist and keep some cash available.</p>}
-          {query && top.length === 0 && <p className="muted small">{signals.error || signals.data?.stocks[0]?.note || "Reading the market."}</p>}
-          {top.length > 0 && (
+          <h3 className="rec-card-title">Intraday</h3>
+
+          {displaySignals.length > 0 ? (
             <ul className="signal-preview">
-              {top.map((s) => {
-                const direction = (s.model_score ?? 0) >= 0 ? "Up" : "Down";
-                const label = signals.data?.session.intraday_open ? ACTION_LABEL[s.action] : { text: direction, tone: direction === "Up" ? "up" as const : "down" as const };
+              {displaySignals.map((s) => {
+                const isBuy = s.action === "BUY" || (!signals.data?.session.intraday_open && (s.model_score ?? 0) >= 0);
+                const score = s.model_score ?? 0;
                 return (
                   <li key={s.symbol}>
-                    <span className="strong">{s.symbol}</span>
-                    <span className={`badge ${label.tone}`}>{label.text}</span>
-                    <span className="view-cell"><SignalBar value={s.model_score ?? 0} label="Live signals" /> <span className="num small muted">{(s.model_score ?? 0) >= 0 ? "+" : ""}{(s.model_score ?? 0).toFixed(2)}</span></span>
+                    <span className="sig-sym">{s.symbol}</span>
+                    <span className={`sig-pill ${isBuy ? "up" : "down"}`}>
+                      {signals.data?.session.intraday_open
+                        ? (s.action === "BUY" ? "Buy" : "Sell")
+                        : (isBuy ? "Bullish" : "Bearish")}
+                    </span>
+                    <span className={`sig-score num ${score >= 0 ? "up" : "down"}`}>
+                      {score >= 0 ? "+" : ""}{score.toFixed(2)}
+                    </span>
                   </li>
                 );
               })}
             </ul>
+          ) : (
+            <p className="muted small" style={{ minHeight: 60, flex: 1 }}>
+              {!query
+                ? "Add stocks to your watchlist to see signals."
+                : signals.error || "Reading the market…"}
+            </p>
           )}
-          <button type="button" className="button primary" onClick={onOpenIntraday}>Get intraday ideas</button>
+
+          <button type="button" className="button primary small" onClick={onOpenIntraday} style={{ marginTop: "auto" }}>
+            Get ideas
+          </button>
         </article>
       </div>
     </section>

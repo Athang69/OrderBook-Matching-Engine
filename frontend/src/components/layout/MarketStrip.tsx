@@ -12,10 +12,11 @@ interface Props {
   sparklines: Record<string, PricePoint[]>;
   selected: string;
   onSelect: (symbol: string) => void;
+  onGlobal?: () => void;
 }
 
 /** The three main indices, then every stock in your watchlist with today's small chart. */
-export function MarketStrip({ indices, indexOrder, watchlist, quotes, sparklines, selected, onSelect }: Props) {
+export function MarketStrip({ indices, indexOrder, watchlist, quotes, sparklines, selected, onSelect, onGlobal }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const scroll = (by: number) => scroller.current?.scrollBy({ left: by, behavior: "smooth" });
   return (
@@ -57,6 +58,15 @@ export function MarketStrip({ indices, indexOrder, watchlist, quotes, sparklines
           })}
         </div>
         <div className="strip-arrows">
+          {onGlobal && (
+            <button type="button" className="global-trigger" onClick={onGlobal} title="Global Markets">
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3">
+                <circle cx="8" cy="8" r="6.5" /><ellipse cx="8" cy="8" rx="3" ry="6.5" />
+                <path d="M1.5 8h13M2.5 5h11M2.5 11h11" />
+              </svg>
+              Global
+            </button>
+          )}
           <button type="button" className="icon-button" aria-label="Scroll left" onClick={() => scroll(-320)}>
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
           </button>

@@ -572,7 +572,7 @@ class Explainer:
         if cached is not None:
             return cached
         try:
-            raw = self._yahoo.chart(ticker, "1y")["bars"]
+            raw = self._yahoo.chart(ticker, "1y", "1d")["bars"]
             closes = closes_by_day(raw)
             self._store(("ohlcv", ticker), ohlcv_by_day(raw))
         except Exception:

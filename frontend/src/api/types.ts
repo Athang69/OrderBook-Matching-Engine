@@ -121,11 +121,13 @@ export interface Status {
   };
 }
 
-export type ChartRange = "1d" | "5d" | "1mo" | "6mo" | "1y" | "5y";
+export type ChartRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "ytd" | "1y" | "5y" | "max";
+export type ChartInterval = "1m" | "2m" | "5m" | "15m" | "30m" | "1h" | "1d" | "1wk" | "1mo";
 
 export interface Chart {
   symbol: string;
   range: ChartRange;
+  interval: ChartInterval;
   bars: Bar[];
   prev_close: number | null;
 }
@@ -463,6 +465,68 @@ export interface ChartCNN {
   accuracy: number | null;
   baseline: number | null;
   auc: number | null;
+}
+
+// ---- global market data ----
+
+export interface GlobalQuote {
+  ticker: string;
+  name: string | null;
+  price: number | null;
+  prev_close: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number;
+  bid: number | null;
+  ask: number | null;
+  change: number | null;
+  change_pct: number | null;
+  market_cap: number | null;
+  pe: number | null;
+  eps: number | null;
+  dividend_yield: number | null;
+  week52_high: number | null;
+  week52_low: number | null;
+  avg_volume: number | null;
+  market_state: string | null;
+  exchange: string | null;
+  currency: string | null;
+  quote_type: string | null;
+  quote_time: number | null;
+}
+
+export interface GlobalSearchResult {
+  ticker: string;
+  name: string | null;
+  exchange: string | null;
+  type: string | null;
+  score: number;
+}
+
+export interface GlobalChart {
+  ticker: string;
+  range: ChartRange;
+  interval: ChartInterval;
+  bars: [number, number, number, number, number, number][];
+  prev_close: number | null;
+  currency: string | null;
+  exchange: string | null;
+}
+
+export interface AllIndicesGroup {
+  name: string;
+  ticker: string | null;
+  ltp: number | null;
+  prev_close: number | null;
+  high: number | null;
+  low: number | null;
+  time: number | null;
+}
+
+export interface AllIndicesResponse {
+  groups: Record<string, AllIndicesGroup[]>;
+  strip: string[];
 }
 
 export interface AnalysisDriver {
