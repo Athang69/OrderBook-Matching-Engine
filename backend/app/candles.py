@@ -34,8 +34,9 @@ def trend(closes: list[int], n: int = 5) -> str:
     """'up', 'down' or 'flat' from the last n closes before the pattern window."""
     if len(closes) < n:
         return "flat"
-    first_half = sum(closes[:n // 2]) / max(n // 2, 1)
-    second_half = sum(closes[n // 2:]) / max(n - n // 2, 1)
+    recent = closes[-n:]
+    first_half = sum(recent[:n // 2]) / max(n // 2, 1)
+    second_half = sum(recent[n // 2:]) / max(n - n // 2, 1)
     pct = (second_half - first_half) / max(first_half, 1)
     if pct > 0.015:
         return "up"

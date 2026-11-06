@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "./api/client";
-import type { Recommendation, Side } from "./api/types";
+import type { IndicatorData, PivotLevels, Recommendation, Side } from "./api/types";
 import { Dashboard } from "./components/layout/Dashboard";
 import { Footer } from "./components/layout/Footer";
 import { IndicesBar } from "./components/layout/IndicesBar";
 import { SectionNav } from "./components/layout/SectionNav";
 import { TopBar } from "./components/layout/TopBar";
 import { GlobalMarkets } from "./components/market/GlobalMarkets";
+import { GlobalStockDetail } from "./components/market/GlobalStockDetail";
 import { Movers } from "./components/market/Movers";
 import { MarketDepth } from "./components/market/OrderBook";
 import { NewsPanel } from "./components/news/News";
@@ -18,6 +19,8 @@ import { WhyMoved } from "./components/quote/WhyMoved";
 import { DeliveryModal } from "./components/recommendations/DeliveryModal";
 import { IntradayModal } from "./components/recommendations/IntradayModal";
 import { RecommendationsPanel } from "./components/recommendations/RecommendationsPanel";
+import { IndicatorsPanel } from "./components/recommendations/Indicators";
+import { SupportResistance } from "./components/recommendations/SupportResistance";
 import { AccountSummary } from "./components/trading/AccountSummary";
 import { AccountTabs } from "./components/trading/AccountTabs";
 import { OrderTicket } from "./components/trading/OrderTicket";
@@ -47,15 +50,40 @@ export function App() {
   const [pickedPrice, setPickedPrice] = useState<{ price: number; at: number } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [globalTicker, setGlobalTicker] = useState<string | undefined>(undefined);
+  const [globalSelected, setGlobalSelected] = useState("");
   const [following, setFollowing] = useState<string[]>([]);
   const [lastDelivery, setLastDelivery] = useState<Recommendation | null>(null);
   const [notice, setNotice] = useState("");
   const [booked, setBooked] = useState(0);
   const [whyDate, setWhyDate] = useState<string | null>(null);
+  const [pivot, setPivot] = useState<PivotLevels | null>(null);
+  const [pivotLoading, setPivotLoading] = useState(false);
+  const [indicators, setIndicators] = useState<IndicatorData | null>(null);
+  const [indicatorsLoading, setIndicatorsLoading] = useState(false);
   const ticket = useRef<HTMLElement>(null);
 
   // Reset why-date when symbol changes
   useEffect(() => setWhyDate(null), [selected]);
+
+  // Fetch pivot levels whenever the selected NSE stock changes
+  useEffect(() => {
+    if (!selected) { setPivot(null); return; }
+    setPivotLoading(true);
+    api.pivot(selected)
+      .then(setPivot)
+      .catch(() => setPivot(null))
+      .finally(() => setPivotLoading(false));
+  }, [selected]);
+
+  // Fetch technical indicators whenever the selected NSE stock changes
+  useEffect(() => {
+    if (!selected) { setIndicators(null); return; }
+    setIndicatorsLoading(true);
+    api.indicators(selected)
+      .then(setIndicators)
+      .catch(() => setIndicators(null))
+      .finally(() => setIndicatorsLoading(false));
+  }, [selected]);
 
   const explainDay = (date: string | null) => {
     setWhyDate(date);
@@ -86,6 +114,7 @@ export function App() {
 
   const select = (next: string) => {
     setSelected(next);
+    setGlobalSelected("");
     setNotice("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -128,6 +157,7 @@ export function App() {
   }
 
   const showDetail = selected && instrument;
+  const showGlobal = !showDetail && globalSelected;
 
   return (
     <>
@@ -142,7 +172,7 @@ export function App() {
         now={now}
         portfolio={portfolio}
         onSelect={select}
-        onGlobalSelect={(ticker) => { setGlobalTicker(ticker); setDialog("global"); }}
+        onGlobalSelect={(ticker) => { setGlobalSelected(ticker); setSelected(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}
       />
 
       <IndicesBar
@@ -153,8 +183,14 @@ export function App() {
 
       {notice && <p className="notice container" role="alert">{notice}</p>}
 
-      {showDetail ? (
-        /* ---- STOCK DETAIL VIEW ---- */
+      {showGlobal ? (
+        /* ---- GLOBAL STOCK DETAIL VIEW ---- */
+        <GlobalStockDetail
+          ticker={globalSelected}
+          onBack={() => { setGlobalSelected(""); window.scrollTo({ top: 0 }); }}
+        />
+      ) : showDetail ? (
+        /* ---- NSE STOCK DETAIL VIEW ---- */
         <div className="container detail-layout">
           <SectionNav />
 
@@ -179,6 +215,8 @@ export function App() {
             <PriceChart symbol={selected} quote={quote} onPickDay={explainDay} />
             <WhyMoved symbol={selected} date={whyDate} onDate={setWhyDate} onOpenStock={select} />
             <KeyStats instrument={instrument} quote={quote} />
+            <SupportResistance levels={pivot} ltp={quote?.ltp} entry={null} loading={pivotLoading} />
+            <IndicatorsPanel indicators={indicators} ltp={quote?.ltp} loading={indicatorsLoading} />
             <MarketDepth
               instrument={instrument}
               quote={quote}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../api/client";
-import type { AllIndicesResponse, GlobalQuote, GlobalSearchResult } from "../../api/types";
+import type { AllIndicesResponse, ChartRange, GlobalChart, GlobalQuote, GlobalSearchResult } from "../../api/types";
 
 interface Props {
   onClose: () => void;
@@ -54,6 +54,64 @@ function fmtCap(value: number | null, currency?: string | null): string {
 
 type Tab = "indices" | "search";
 
+const RANGES: { label: string; range: ChartRange; interval: "1d" | "1wk" }[] = [
+  { label: "1D",  range: "1d",  interval: "1d" },
+  { label: "1M",  range: "1mo", interval: "1d" },
+  { label: "6M",  range: "6mo", interval: "1d" },
+  { label: "1Y",  range: "1y",  interval: "1wk" },
+  { label: "5Y",  range: "5y",  interval: "1wk" },
+];
+
+function MiniLineChart({ bars, currency }: { bars: GlobalChart["bars"]; currency: string | null }) {
+  if (!bars.length) return <p className="muted small">No chart data.</p>;
+  const closes = bars.map((b) => b[4]);
+  const times  = bars.map((b) => b[0]);
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const range = max - min || 1;
+  const W = 600, H = 160, PAD = 8;
+  const x = (i: number) => PAD + (i / (closes.length - 1)) * (W - PAD * 2);
+  const y = (v: number) => H - PAD - ((v - min) / range) * (H - PAD * 2);
+  const first = closes[0], last = closes[closes.length - 1];
+  const up = last >= first;
+  const color = up ? "var(--up)" : "var(--down)";
+  const pts   = closes.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+  const area  = `M${x(0)},${H - PAD} ` + closes.map((v, i) => `L${x(i)},${y(v)}`).join(" ") + ` L${x(closes.length-1)},${H - PAD} Z`;
+
+  // Format x-axis labels
+  const labelCount = 5;
+  const step = Math.max(1, Math.floor((closes.length - 1) / (labelCount - 1)));
+  const labelIdxs = Array.from({ length: labelCount }, (_, i) => Math.min(i * step, closes.length - 1));
+
+  return (
+    <div className="global-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: H }}>
+        <defs>
+          <linearGradient id="gcfill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {/* area fill */}
+        <path d={area} fill="url(#gcfill)" />
+        {/* line */}
+        <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+        {/* x-axis labels */}
+        {labelIdxs.map((idx) => (
+          <text key={idx} x={x(idx)} y={H - 2} textAnchor="middle" fontSize="10" fill="var(--faint)">
+            {new Date(times[idx] * 1000).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+          </text>
+        ))}
+      </svg>
+      <div className="global-chart-axis">
+        <span className="num small faint">{cur(currency)}{min.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+        <span className={`num small ${up ? "up" : "down"}`}>{cur(currency)}{last.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+        <span className="num small faint">{cur(currency)}{max.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+      </div>
+    </div>
+  );
+}
+
 export function GlobalMarkets({ onClose, initialTicker }: Props) {
   const [tab, setTab] = useState<Tab>("indices");
   const [allIndices, setAllIndices] = useState<AllIndicesResponse | null>(null);
@@ -63,6 +121,9 @@ export function GlobalMarkets({ onClose, initialTicker }: Props) {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [tickerQuote, setTickerQuote] = useState<GlobalQuote | null>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
+  const [chartData, setChartData] = useState<GlobalChart | null>(null);
+  const [chartRange, setChartRange] = useState<typeof RANGES[number]>(RANGES[2]);
+  const [loadingChart, setLoadingChart] = useState(false);
   const [error, setError] = useState("");
   const [expandedGroup, setExpandedGroup] = useState<string | null>("India");
 
@@ -91,19 +152,38 @@ export function GlobalMarkets({ onClose, initialTicker }: Props) {
     }
   }, [searchQuery]);
 
+  const loadChart = useCallback(async (ticker: string, r: typeof RANGES[number]) => {
+    setLoadingChart(true);
+    setChartData(null);
+    try {
+      const data = await api.globalChart(ticker, r.range, r.interval);
+      setChartData(data);
+    } catch {
+      setChartData(null);
+    } finally {
+      setLoadingChart(false);
+    }
+  }, []);
+
   const loadQuote = useCallback(async (ticker: string) => {
     setSelectedTicker(ticker);
     setLoadingQuote(true);
     setTickerQuote(null);
+    setChartData(null);
+    const r = RANGES[2]; // default 6M
+    setChartRange(r);
     try {
-      const res = await api.globalQuote([ticker]);
-      setTickerQuote(res.quotes[ticker] ?? null);
+      const [quoteRes] = await Promise.all([
+        api.globalQuote([ticker]),
+        loadChart(ticker, r),
+      ]);
+      setTickerQuote(quoteRes.quotes[ticker] ?? null);
     } catch {
       setTickerQuote(null);
     } finally {
       setLoadingQuote(false);
     }
-  }, []);
+  }, [loadChart]);
 
   return (
     <div className="global-overlay" role="dialog" aria-label="Global Markets">
@@ -200,21 +280,49 @@ export function GlobalMarkets({ onClose, initialTicker }: Props) {
 
         {selectedTicker && (
           <div className="quote-detail-panel">
-            <h3>{selectedTicker}</h3>
+            <div className="qd-header-row">
+              <h3 className="qd-ticker">{selectedTicker}</h3>
+              <button type="button" className="global-close qd-close" onClick={() => { setSelectedTicker(null); setTickerQuote(null); setChartData(null); }} aria-label="Close detail">
+                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4L4 12" stroke="currentColor" strokeWidth="1.8" /></svg>
+              </button>
+            </div>
+
             {loadingQuote ? (
-              <p className="muted">Loading...</p>
+              <p className="muted small">Loading…</p>
             ) : tickerQuote ? (
-              <div className="quote-detail-grid">
+              <>
                 <div className="qd-main">
                   <span className="qd-name">{tickerQuote.name}</span>
                   <span className="qd-price">{fmtPrice(tickerQuote.price, tickerQuote.currency)}</span>
                   <span className={`qd-change ${dir(tickerQuote.change)}`}>
                     {fmtChange(tickerQuote.change, tickerQuote.change_pct)}
                   </span>
-                  <span className="qd-meta">
-                    {tickerQuote.exchange} &middot; {tickerQuote.currency} &middot; {tickerQuote.market_state}
+                  <span className="qd-meta muted small">
+                    {tickerQuote.exchange} · {tickerQuote.currency} · {tickerQuote.market_state}
                   </span>
                 </div>
+
+                {/* Chart */}
+                <div className="qd-chart-section">
+                  <div className="qd-range-row">
+                    {RANGES.map((r) => (
+                      <button
+                        key={r.label}
+                        type="button"
+                        className={`range-btn${chartRange.label === r.label ? " active" : ""}`}
+                        onClick={() => { setChartRange(r); loadChart(selectedTicker, r); }}
+                      >{r.label}</button>
+                    ))}
+                  </div>
+                  {loadingChart
+                    ? <div className="global-chart-loading muted small">Loading chart…</div>
+                    : chartData
+                      ? <MiniLineChart bars={chartData.bars} currency={tickerQuote.currency} />
+                      : <div className="global-chart-loading muted small">No chart data.</div>
+                  }
+                </div>
+
+                {/* Key stats */}
                 <div className="qd-stats">
                   <div><span className="label">Open</span><span className="num">{fmtPrice(tickerQuote.open)}</span></div>
                   <div><span className="label">High</span><span className="num">{fmtPrice(tickerQuote.high)}</span></div>
@@ -229,11 +337,10 @@ export function GlobalMarkets({ onClose, initialTicker }: Props) {
                   <div><span className="label">52W Low</span><span className="num">{fmtPrice(tickerQuote.week52_low)}</span></div>
                   <div><span className="label">Div Yield</span><span className="num">{tickerQuote.dividend_yield != null ? tickerQuote.dividend_yield.toFixed(2) + "%" : "—"}</span></div>
                 </div>
-              </div>
+              </>
             ) : (
-              <p className="muted">No data available for {selectedTicker}.</p>
+              <p className="muted small">No data available for {selectedTicker}.</p>
             )}
-            <button type="button" className="btn btn-small" onClick={() => { setSelectedTicker(null); setTickerQuote(null); }}>Close</button>
           </div>
         )}
       </div>

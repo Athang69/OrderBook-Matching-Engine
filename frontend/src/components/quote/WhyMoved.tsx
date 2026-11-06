@@ -4,6 +4,7 @@ import type { Analysis, CandlePattern, ExplainHeadline, Explanation, OHLCBar, Sc
 import { useAnalysis } from "../../hooks/useAnalysis";
 import { useExplanation } from "../../hooks/useExplanation";
 import { dateTime, price } from "../../lib/format";
+import { SupportResistance } from "../recommendations/SupportResistance";
 
 interface Props {
   symbol: string;
@@ -149,6 +150,18 @@ function ClaudeCard({ analysis, loading, error, explanation, onCite }: {
               <div style={{ gridColumn: "1 / -1" }}>
                 <h3>📊 Technical view</h3>
                 <p>{cite(a.technical_view, onCite)}</p>
+              </div>
+            </div>
+          )}
+          {(analysis?.sr_levels || analysis?.sr_entry) && (
+            <div className="why-columns">
+              <div style={{ gridColumn: "1 / -1" }}>
+                <SupportResistance
+                  levels={analysis.sr_levels}
+                  ltp={explanation.price}
+                  entry={analysis.sr_entry}
+                />
+                {a.sr_view && <p className="hint" style={{ marginTop: 8 }}>{cite(a.sr_view, onCite)}</p>}
               </div>
             </div>
           )}

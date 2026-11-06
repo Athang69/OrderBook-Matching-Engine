@@ -23,6 +23,8 @@ class Instrument:
     lower_band: int
     upper_band: int
     data_date: str  # the trading day the closing price comes from, e.g. "2026-10-14"
+    prev_high: int = 0  # previous session's high, in paise (from NSE bhavcopy HIGH_PRICE)
+    prev_low: int = 0   # previous session's low, in paise (from NSE bhavcopy LOW_PRICE)
 
     @property
     def avg_trade_qty(self) -> int:
@@ -66,10 +68,11 @@ def to_paise(text: str) -> int:
 
 
 def make_instrument(symbol: str, close: int, band_pct: int, data_date: str, name: str = "", series: str = "EQ",
-                    volume: int = 0, trades: int = 0) -> Instrument:
+                    volume: int = 0, trades: int = 0, prev_high: int = 0, prev_low: int = 0) -> Instrument:
     tick = tick_size(close)
     lower, upper = price_band(close, band_pct, tick)
-    return Instrument(symbol, name or symbol, series, close, volume, trades, tick, band_pct, lower, upper, data_date)
+    return Instrument(symbol, name or symbol, series, close, volume, trades, tick, band_pct, lower, upper, data_date,
+                      prev_high, prev_low)
 
 
 def latest_data_files(data_dir: Path) -> tuple[Path, Path]:
@@ -111,9 +114,15 @@ def load_instruments(data_dir: Path, series: tuple[str, ...], default_band_pct: 
                 continue
             if close <= 0:
                 continue
+            try:
+                prev_high = to_paise(row["HIGH_PRICE"])
+                prev_low  = to_paise(row["LOW_PRICE"])
+            except (ValueError, KeyError):
+                prev_high = prev_low = 0
             band, name = listed.get(symbol, (default_band_pct, symbol))
             found[symbol] = make_instrument(symbol, close, band, data_date, name=name, series=kind,
-                                            volume=int(row["TTL_TRD_QNTY"] or 0), trades=int(row["NO_OF_TRADES"] or 0))
+                                            volume=int(row["TTL_TRD_QNTY"] or 0), trades=int(row["NO_OF_TRADES"] or 0),
+                                            prev_high=prev_high, prev_low=prev_low)
     if not found:
         raise ValueError(f"No {'/'.join(series)} stocks in {bhav_path.name}")
     return found

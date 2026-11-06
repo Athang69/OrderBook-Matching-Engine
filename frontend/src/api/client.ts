@@ -1,7 +1,7 @@
 // Calls to the REST API.
 import type {
   AllIndicesResponse, Analysis, Chart, ChartInterval, ChartRange, Confidences, Explanation, GlobalChart, GlobalQuote, GlobalSearchResult,
-  InstrumentDetail, IntradayRecommendation, NewOrder, NewsResponse, Order, Portfolio,
+  IndicatorData, InstrumentDetail, IntradayRecommendation, NewOrder, NewsResponse, Order, PivotLevels, Portfolio,
   PricePoint, Quote, Recommendation, SymbolList, TopOfBook,
 } from "./types";
 
@@ -50,6 +50,9 @@ export const api = {
     request<Recommendation>("/v1/recommendations", post({ symbols, confidences, budget })),
   recommendIntraday: (symbols: string[], confidences: Confidences, budget: number) =>
     request<IntradayRecommendation>("/v1/recommendations/intraday", post({ symbols, confidences, budget })),
+  pivot: (symbol: string) => request<PivotLevels>(`/v1/market/pivot/${path(symbol)}`),
+  pivots: (symbols: string[]) => request<Record<string, PivotLevels>>(`/v1/market/pivot?${many("symbols", symbols)}`),
+  indicators: (symbol: string) => request<IndicatorData>(`/v1/market/indicators/${path(symbol)}`),
 
   // Global market data (any exchange, view-only)
   globalSearch: (q: string, count = 20) =>
@@ -64,4 +67,10 @@ export const api = {
     request<{ ticker: string; similar: string[] }>(`/v1/global/similar/${encodeURIComponent(ticker)}`),
   allIndices: () => request<AllIndicesResponse>("/v1/market/indices/all"),
   exchanges: () => request<{ exchanges: Record<string, string> }>("/v1/global/exchanges"),
+  globalNews: (ticker: string) =>
+    request<{ stocks: Record<string, import("./types").StockNews> }>(`/v1/global/news/${encodeURIComponent(ticker)}`),
+  globalExplain: (ticker: string, date?: string | null) =>
+    request<import("./types").Explanation>(`/v1/global/explain/${encodeURIComponent(ticker)}${date ? `?date=${date}` : ""}`),
+  globalAnalysis: (ticker: string, date?: string | null) =>
+    request<import("./types").Analysis>(`/v1/global/analysis/${encodeURIComponent(ticker)}${date ? `?date=${date}` : ""}`),
 };

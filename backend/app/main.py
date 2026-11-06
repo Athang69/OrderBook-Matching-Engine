@@ -613,6 +613,16 @@ def pivots(symbols: list[str] = Query(..., min_length=1, max_length=MAX_SUBSCRIP
     return {s: sim().get_pivot(s) for s in cleaned}
 
 
+@app.get("/v1/market/indicators/{symbol}")
+def indicators(symbol: str) -> dict:
+    """RSI (14), MACD (12,26,9), Fibonacci (50-day) and Beta vs NIFTY 50 for one NSE stock.
+
+    Computed from 1-year daily history fetched from Yahoo Finance. Cached per trading day.
+    Each indicator is either the result dict or {"error": reason_string} when data is insufficient.
+    """
+    return sim().get_indicators(require_symbol(symbol))
+
+
 @app.get("/v1/global/search")
 async def global_search(q: str = Query(..., min_length=1, max_length=100), count: int = Query(20, ge=1, le=50)) -> dict:
     """Search Yahoo Finance for any stock, ETF, index, future or crypto worldwide."""

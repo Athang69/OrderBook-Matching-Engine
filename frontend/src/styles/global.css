@@ -239,15 +239,79 @@
 
 .quote-detail-panel {
   flex-shrink: 0;
-  padding: 16px 20px;
+  padding: 16px 20px 20px;
   border-top: 1px solid var(--border);
   background: var(--surface);
+  overflow-y: auto;
 }
 
-.quote-detail-panel h3 {
+.qd-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.qd-ticker {
   font-size: 16px;
   font-weight: 700;
-  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.qd-close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* chart section */
+.qd-chart-section {
+  margin: 14px 0;
+}
+
+.qd-range-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.range-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.range-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.range-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }
+
+.global-chart {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+  padding: 8px 8px 0;
+}
+
+.global-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 2px 6px;
+  font-size: 11px;
+}
+
+.global-chart-loading {
+  height: 168px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
 }
 
 .quote-detail-grid {
@@ -381,4 +445,30 @@
   .quote-detail-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---- GlobalStockDetail full-page view ---- */
+
+.gsd-about {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gsd-about > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.gsd-about .label {
+  color: var(--muted);
+}
+
+.badge-up {
+  background: var(--up-tint);
+  color: var(--up-solid);
+  border-color: transparent;
 }
