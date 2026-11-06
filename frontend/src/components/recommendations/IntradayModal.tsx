@@ -9,6 +9,8 @@ import { SignalBar } from "../ui/SignalBar";
 import { Outcomes, StatCard, Steps } from "./DeliveryModal";
 import { placeMarketOrders, type OrderOutcome } from "./placeOrders";
 import { StockPicker } from "./StockPicker";
+import { IndicatorsPanel } from "./Indicators";
+import { SupportResistance } from "./SupportResistance";
 import { YourViews } from "./YourViews";
 
 interface Props {
@@ -152,6 +154,23 @@ export function IntradayModal({ open, onClose, symbols, names, quotes, watchlist
   );
 }
 
+function StockSRPanel({ stock }: { stock: IntradayStock }) {
+  return (
+    <div className="sr-stock-card">
+      <div className="sr-stock-title strong">{stock.symbol}</div>
+      <SupportResistance
+        levels={stock.pivot}
+        ltp={stock.ltp}
+        entry={stock.pivot_entry}
+      />
+      <IndicatorsPanel
+        indicators={stock.indicators}
+        ltp={stock.ltp}
+      />
+    </div>
+  );
+}
+
 function IntradayResult({ data, error, roundTripMs, updatedAt, live, onToggleLive, placing, outcomes, marginDivisor, onTrade, onBack, onClose }: {
   data: IntradayRecommendation | null; error: string; roundTripMs: number | null; updatedAt: number | null;
   live: boolean; onToggleLive: () => void; placing: boolean; outcomes: OrderOutcome[] | null; marginDivisor: number;
@@ -248,6 +267,13 @@ function IntradayResult({ data, error, roundTripMs, updatedAt, live, onToggleLiv
         </table>
       </div>
       <p className="hint">Bars run from strong sell (red, left) to strong buy (green, right).</p>
+
+      <h3>Support and Resistance</h3>
+      <div className="sr-stocks-grid">
+        {data.stocks.map((s) => (
+          <StockSRPanel key={s.symbol} stock={s} />
+        ))}
+      </div>
 
       <p className="method-note">
         From real NSE trading today: momentum is the last minute's price change against the stock's normal one-minute moves;

@@ -229,13 +229,15 @@ export interface NewsArticle {
   url: string;
   /** Unix seconds. */
   published: number;
+  /** FinBERT sentiment, present when scored by the backend. */
+  sentiment?: { label: string; pos: number; neg: number; neu: number; score: number } | null;
 }
 
 export interface StockNews {
   symbol: string;
   company: string;
   articles: NewsArticle[];
-  fetched_at: number;
+  fetched_at?: number;
   /** Set when the latest refresh failed; the articles may then be older. */
   error: string | null;
 }
@@ -312,6 +314,84 @@ export interface Recommendation {
   runtime_ms: number;
 }
 
+// ---- technical indicators ----
+
+export interface RSIData {
+  value: number;
+  verdict: "Overbought" | "Neutral" | "Oversold";
+  reason: string;
+}
+
+export interface MACDData {
+  macd: number;
+  signal: number;
+  histogram: number;
+  verdict: "Bullish crossover" | "Bearish crossover" | "Bullish" | "Bearish" | "Neutral";
+  reason: string;
+}
+
+export interface FibLevel {
+  ratio: number;
+  price: number;
+}
+
+export interface FibonacciData {
+  levels: FibLevel[];
+  extensions: FibLevel[];
+  swing_high: number;
+  swing_low: number;
+  trend: "uptrend" | "downtrend";
+  nearest_above: number | null;
+  nearest_below: number | null;
+  nearest_ratio_above: number | null;
+  nearest_ratio_below: number | null;
+  verdict: string;
+}
+
+export interface BetaData {
+  value: number;
+  verdict: "Inverse" | "Very defensive" | "Defensive" | "Tracks market" | "Volatile" | "Highly volatile";
+  reason: string;
+  window_days: number;
+  benchmark: string;
+}
+
+export type IndicatorResult<T> = T | { error: string } | null;
+
+export interface IndicatorData {
+  rsi: IndicatorResult<RSIData>;
+  macd: IndicatorResult<MACDData>;
+  fibonacci: IndicatorResult<FibonacciData>;
+  beta: IndicatorResult<BetaData>;
+}
+
+// ---- pivot / support and resistance ----
+
+/** Classic (Floor) pivot levels for one stock. All prices in paise. null values mean the data was unavailable. */
+export interface PivotLevels {
+  symbol: string;
+  trading_day: string;
+  pp: number | null;
+  r1: number | null;
+  r2: number | null;
+  r3: number | null;
+  s1: number | null;
+  s2: number | null;
+  s3: number | null;
+  error: string | null;
+}
+
+/** Entry/exit suggestion derived from pivot levels and the current price. */
+export interface PivotEntry {
+  entry: number | null;
+  stop_loss: number | null;
+  target: number | null;
+  risk_reward: number | null;
+  reason: string;
+  valid: boolean;
+  type: "support_buy" | "breakout_buy" | null;
+}
+
 // ---- intraday recommendation ----
 
 export type IntradayAction = "BUY" | "SELL" | "NO_TRADE" | "WAIT";
@@ -351,6 +431,12 @@ export interface IntradayStock {
   max_loss: number;
   max_gain: number;
   note: string;
+  /** Classic pivot levels for this stock (additive — present when the backend has previous-session data). */
+  pivot?: PivotLevels | null;
+  /** Entry/exit/stop suggestion from the pivot levels and the live price. */
+  pivot_entry?: PivotEntry | null;
+  /** RSI, MACD, Fibonacci and Beta — computed from daily history, cached per trading day. */
+  indicators?: IndicatorData | null;
 }
 
 export interface IntradayRecommendation {
@@ -441,6 +527,8 @@ export interface Explanation {
   candle_patterns?: { today: CandlePattern[]; previous: CandlePattern[] };
   /** Chart CNN predictions for the explained day and the day before. */
   chart_cnn?: { today: ChartCNN | null; previous: ChartCNN | null };
+  /** For global stocks: the currency of prices (e.g. "USD"). */
+  currency?: string;
 }
 
 export interface OHLCBar {
@@ -555,7 +643,12 @@ export interface Analysis {
     confidence_reason: string;
     watch: string[];
     technical_view?: string;
+    sr_view?: string;
   };
+  /** Classic pivot levels for the analysis day, computed from the previous session's H/L/C. */
+  sr_levels?: PivotLevels | null;
+  /** Entry/exit suggestion based on where price closed relative to the pivot levels. */
+  sr_entry?: PivotEntry | null;
   /** Claude's reply as text, when it could not be read as the expected shape. */
   raw: string | null;
   model: string;
