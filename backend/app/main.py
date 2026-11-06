@@ -28,11 +28,17 @@ import contextlib
 import datetime as dt
 import json
 import logging
+import pathlib
 import subprocess
 import sys
 import threading
 import time
 from typing import Literal
+
+# Add project root to path so recomendation_system (at repo root) is importable
+_PROJECT_ROOT = str(pathlib.Path(__file__).resolve().parents[2])
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 try:
     from dotenv import load_dotenv as _load_dotenv
@@ -46,7 +52,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, intraday
+from . import config, intraday, pivot as _pivot, indicators as _indicators
 from .audit import AuditLog
 from .engine_client import EngineClient
 from .exchange import Exchange
@@ -89,7 +95,9 @@ class Simulator:
         self.exchange.create_account(config.DEMO_USER, config.DEMO_CASH)
         self.news = NewsService(self.news_terms, config.NEWS_PER_STOCK, config.NEWS_CACHE_SECONDS)
         self.explainer = Explainer(self.yahoo, lambda: set(self.instruments), self.news_terms)
-        self.analyst = Analyst(self.explainer, lambda s: (self.market.quote(s) or {}).get("name") or self.instruments[s].name)
+        self.analyst = Analyst(self.explainer,
+                               lambda s: (self.market.quote(s) or {}).get("name") or self.instruments[s].name,
+                               get_indicators=self.get_indicators)
         self.requested: dict[str, float] = {}  # stock -> when it was last asked for
         self.bars_loaded: dict[str, str] = {}  # stock -> trading day its one-minute bars were loaded for
         self.charts: dict[tuple[str, str], tuple[float, dict]] = {}
@@ -98,6 +106,12 @@ class Simulator:
         self.started_day: str | None = None
         self.refreshed: set[tuple[str, tuple[int, int]]] = set()
         self._symbol_list: dict | None = None
+        # pivot cache: symbol -> (trading_day, levels_dict) — recomputed when the session changes
+        self._pivot_cache: dict[str, tuple[str, dict]] = {}
+        # indicator cache: symbol -> (trading_day, indicators_dict) — recomputed once per trading day
+        self._indicator_cache: dict[str, tuple[str, dict]] = {}
+        # NIFTY 50 daily close series for Beta, refreshed once per trading day
+        self._nifty_cache: tuple[str, list[tuple[str, float]]] | None = None
 
     # ---- the session and reference data ----
 
@@ -122,6 +136,83 @@ class Simulator:
         quote = self.market.quote(symbol) or {}
         instrument = self.instruments.get(symbol)
         return company_terms(symbol, quote.get("name") or (instrument.name if instrument else symbol), config.COMPANIES)
+
+    def get_pivot(self, symbol: str) -> dict:
+        """Classic pivot levels for one stock, cached per trading day."""
+        trading_day = self.session()["trading_day"]
+        cached = self._pivot_cache.get(symbol)
+        if cached and cached[0] == trading_day:
+            return {"symbol": symbol, "trading_day": trading_day, **cached[1], "error": None}
+        inst = self.instruments.get(symbol)
+        if inst is None:
+            return _pivot_error(symbol, trading_day, "Unknown symbol")
+        if inst.prev_high <= 0 or inst.prev_low <= 0:
+            return _pivot_error(symbol, trading_day, "Previous session high/low not in NSE data")
+        levels = _pivot.compute_pivot(inst.prev_high, inst.prev_low, inst.close)
+        if levels is None:
+            return _pivot_error(symbol, trading_day, "Could not compute pivot levels from the available data")
+        self._pivot_cache[symbol] = (trading_day, levels)
+        return {"symbol": symbol, "trading_day": trading_day, **levels, "error": None}
+
+    def _nifty_series(self, trading_day: str) -> list[tuple[str, float]]:
+        """NIFTY 50 daily close series, fetched once per trading day and cached."""
+        if self._nifty_cache and self._nifty_cache[0] == trading_day:
+            return self._nifty_cache[1]
+        try:
+            data  = self.yahoo.global_chart("^NSEI", "1y", "1d")
+            bars  = data.get("bars") or []
+            from datetime import datetime, timezone
+            series = [(datetime.fromtimestamp(b[0], timezone.utc).date().isoformat(), b[4])
+                      for b in bars if b[4]]
+            self._nifty_cache = (trading_day, series)
+            return series
+        except Exception:
+            return []
+
+    def get_indicators(self, symbol: str) -> dict:
+        """RSI, MACD, Fibonacci and Beta for one stock, cached per trading day.
+
+        Fetches 1-year daily OHLCV from Yahoo once per stock per session and runs all four
+        pure-function calculations. Returns a dict with keys rsi, macd, fibonacci, beta;
+        each value is either the indicator result dict or {"error": reason_string}.
+        """
+        trading_day = self.session()["trading_day"]
+        cached = self._indicator_cache.get(symbol)
+        if cached and cached[0] == trading_day:
+            return cached[1]
+
+        inst = self.instruments.get(symbol)
+        if inst is None:
+            return {"rsi": {"error": "unknown_symbol"}, "macd": {"error": "unknown_symbol"},
+                    "fibonacci": {"error": "unknown_symbol"}, "beta": {"error": "unknown_symbol"}}
+
+        try:
+            from .yahoo import to_yahoo as _ty
+            from datetime import datetime, timezone as _tz
+            data = self.yahoo.global_chart(_ty(symbol), "1y", "1d")
+            bars = data.get("bars") or []
+        except Exception:
+            err = {"error": "data_unavailable"}
+            result = {"rsi": err, "macd": err, "fibonacci": err, "beta": err}
+            return result
+
+        closes = [b[4] for b in bars if b[4]]
+        ohlc   = [(b[1], b[2], b[3], b[4]) for b in bars if b[4]]  # (open, high, low, close)
+
+        from datetime import datetime, timezone
+        stock_series = [(datetime.fromtimestamp(b[0], timezone.utc).date().isoformat(), b[4])
+                        for b in bars if b[4]]
+
+        rsi_result  = _indicators.compute_rsi(closes)
+        macd_result = _indicators.compute_macd(closes)
+        fib_result  = _indicators.compute_fibonacci(ohlc, closes[-1] if closes else 0.0)
+
+        nifty = self._nifty_series(trading_day)
+        beta_result = _indicators.compute_beta(stock_series, nifty) if nifty else {"error": "benchmark_unavailable"}
+
+        result = {"rsi": rsi_result, "macd": macd_result, "fibonacci": fib_result, "beta": beta_result}
+        self._indicator_cache[symbol] = (trading_day, result)
+        return result
 
     def reload_reference_data(self) -> None:
         """Downloads NSE's newest daily files and applies the new closing prices and price bands."""
@@ -328,6 +419,12 @@ def require_user(user_id: str) -> str:
     return user_id
 
 
+def _pivot_error(symbol: str, trading_day: str, msg: str) -> dict:
+    return {"symbol": symbol, "trading_day": trading_day,
+            "pp": None, "r1": None, "r2": None, "r3": None,
+            "s1": None, "s2": None, "s3": None, "error": msg}
+
+
 class OrderRequest(BaseModel):
     user_id: str = config.DEMO_USER
     symbol: str
@@ -499,6 +596,23 @@ def all_indices() -> dict:
 
 # ---- global market data (any exchange, view-only) ----
 
+@app.get("/v1/market/pivot/{symbol}")
+def pivot(symbol: str) -> dict:
+    """Classic (Floor) pivot levels for one stock, computed from the previous session's H/L/C.
+
+    Levels are in paise, like all other prices. Cached per trading day — only recomputes when the
+    session changes. Returns error: null on success, or a reason string when levels are unavailable.
+    """
+    return sim().get_pivot(require_symbol(symbol))
+
+
+@app.get("/v1/market/pivot")
+def pivots(symbols: list[str] = Query(..., min_length=1, max_length=MAX_SUBSCRIPTIONS)) -> dict:
+    """Classic pivot levels for several stocks at once."""
+    cleaned = [s.strip().upper() for s in dict.fromkeys(symbols) if s.strip().upper() in sim().instruments]
+    return {s: sim().get_pivot(s) for s in cleaned}
+
+
 @app.get("/v1/global/search")
 async def global_search(q: str = Query(..., min_length=1, max_length=100), count: int = Query(20, ge=1, le=50)) -> dict:
     """Search Yahoo Finance for any stock, ETF, index, future or crypto worldwide."""
@@ -578,6 +692,346 @@ async def global_similar(ticker: str) -> dict:
 def exchanges() -> dict:
     """The supported exchange suffixes for Yahoo Finance tickers."""
     return {"exchanges": config.EXCHANGE_SUFFIXES}
+
+
+@app.get("/v1/global/news/{ticker:path}")
+def global_news(ticker: str) -> dict:
+    """Google News headlines for any global ticker, with FinBERT sentiment, no NSE validation."""
+    from . import news as _news_mod, finbert as _fb
+    ticker = ticker.strip().upper()
+    # Get company name from cached quote
+    try:
+        q = sim().yahoo.global_quotes([ticker]).get(ticker, {})
+        name = q.get("shortName") or q.get("longName") or ticker
+    except Exception:
+        name = ticker
+    search, aliases = _news_mod.company_terms(ticker, name, {})
+    try:
+        feed = _news_mod.fetch_feed(_news_mod.search_url(search))
+        raw = _news_mod.parse_feed(feed, aliases, 40)
+        titles = [a.title for a in raw]
+        sentiments = _fb.score_headlines(titles, timeout=10.0)
+        articles = []
+        for a, s in zip(raw, sentiments):
+            import dataclasses
+            art = dataclasses.asdict(a)
+            art["sentiment"] = {"label": s.label, "pos": s.pos, "neg": s.neg, "neu": s.neu, "score": s.score} if s else None
+            articles.append(art)
+        return {"stocks": {ticker: {"symbol": ticker, "company": name, "articles": articles, "error": None}}}
+    except Exception as err:
+        return {"stocks": {ticker: {"symbol": ticker, "company": name, "articles": [], "error": str(err)}}}
+
+
+_GLOBAL_EXPLAIN_CACHE: dict[str, tuple[float, dict]] = {}
+_GLOBAL_EXPLAIN_TTL = 300
+
+
+@app.get("/v1/global/explain/{ticker:path}")
+def global_explain(ticker: str, date: str | None = Query(None)) -> dict:
+    """Why a global stock moved: price data, peers, world markets, and news with FinBERT sentiment.
+    Returns an Explanation-compatible dict with float prices in the stock's own currency."""
+    import dataclasses, statistics
+    from datetime import datetime, timezone
+    from . import news as _news_mod, finbert as _fb
+    from .candles import detect_patterns
+    from . import chart_cnn as _cnn
+    ticker = ticker.strip().upper()
+    cache_key = f"{ticker}:{date or ''}"
+    cached = _GLOBAL_EXPLAIN_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _GLOBAL_EXPLAIN_TTL:
+        return cached[1]
+
+    # --- price history ---
+    try:
+        raw = sim().yahoo.global_chart(ticker, "6mo", "1d")
+        bars = raw.get("bars", [])  # [ts, open, high, low, close, volume]
+    except Exception:
+        raise HTTPException(502, "Could not load price history from Yahoo.")
+    if len(bars) < 5:
+        raise HTTPException(404, f"Not enough price history for {ticker}.")
+
+    utc = timezone.utc
+    closes_by_date: dict[dt.date, float] = {
+        datetime.fromtimestamp(b[0], utc).date(): b[4] for b in bars if b[4]
+    }
+    sorted_days = sorted(closes_by_date)
+
+    # pick the explained day
+    if date:
+        try:
+            target = dt.date.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(422, "date must be YYYY-MM-DD.")
+        if target not in closes_by_date:
+            raise HTTPException(404, f"{ticker} did not trade on {date}.")
+    else:
+        target = sorted_days[-1]
+
+    idx = sorted_days.index(target)
+    if idx == 0:
+        raise HTTPException(404, "No previous trading day found.")
+    prev_date = sorted_days[idx - 1]
+    prev_close = closes_by_date[prev_date]
+    price = closes_by_date[target]
+    change = price / prev_close - 1
+
+    # --- market model (S&P 500 as reference) ---
+    try:
+        mkt_raw = sim().yahoo.global_chart("^GSPC", "6mo", "1d")
+        mkt_closes: dict[dt.date, float] = {
+            datetime.fromtimestamp(b[0], utc).date(): b[4]
+            for b in mkt_raw.get("bars", []) if b[4]
+        }
+    except Exception:
+        mkt_closes = {}
+
+    beta, market_part, typical_move = None, None, None
+    mkt_change_on_day = None
+    if mkt_closes:
+        common = sorted(d for d in closes_by_date if d in mkt_closes and d < target)
+        if len(common) >= 20:
+            s_rets = [closes_by_date[common[i]] / closes_by_date[common[i-1]] - 1 for i in range(1, len(common))]
+            m_rets = [mkt_closes[common[i]] / mkt_closes[common[i-1]] - 1 for i in range(1, len(common))]
+            mm = statistics.fmean(m_rets); ms = statistics.fmean(s_rets)
+            var = sum((x - mm)**2 for x in m_rets)
+            beta = round(min(max(sum((x-mm)*(y-ms) for x,y in zip(m_rets,s_rets))/var if var else 1.0, 0.0), 3.0), 3)
+            own_rets = [y - beta*x for x,y in zip(m_rets, s_rets)]
+            typical_move = statistics.stdev(own_rets)
+        if prev_date in mkt_closes and target in mkt_closes:
+            mkt_change_on_day = mkt_closes[target] / mkt_closes[prev_date] - 1
+            market_part = beta * mkt_change_on_day if beta is not None else None
+
+    # --- peers ---
+    peers = []
+    try:
+        similar_tickers = sim().yahoo.similar(ticker)[:5]
+        if similar_tickers:
+            peer_quotes = sim().yahoo.global_quotes(similar_tickers)
+            for pt in similar_tickers:
+                q = peer_quotes.get(pt, {})
+                chg_pct = q.get("regularMarketChangePercent")
+                peers.append({"symbol": pt, "change": chg_pct / 100 if chg_pct is not None else None})
+    except Exception:
+        pass
+
+    # --- profile ---
+    profile = {"sector": None, "industry": None, "summary": None, "peers": [p["symbol"] for p in peers]}
+    try:
+        p = sim().yahoo.profile(ticker)
+        profile.update({"sector": p.get("sector"), "industry": p.get("industry"), "summary": p.get("summary")})
+    except Exception:
+        pass
+
+    # --- biggest recent moves ---
+    big_days = []
+    own_per_day = {}
+    for i in range(1, len(sorted_days)):
+        d, pd = sorted_days[i], sorted_days[i-1]
+        ret = closes_by_date[d] / closes_by_date[pd] - 1
+        mkt_ret = mkt_closes.get(d, mkt_closes.get(pd))
+        own = ret - (beta or 0) * (mkt_closes.get(d, 0) / mkt_closes.get(pd, 1) - 1 if pd in mkt_closes else 0)
+        own_per_day[d] = own
+    recent = sorted_days[max(0, len(sorted_days)-63):]
+    big = sorted(recent, key=lambda d: abs(own_per_day.get(d, 0)), reverse=True)[:6]
+    big_days = [{"date": d.isoformat(), "change": closes_by_date[d] / closes_by_date[sorted_days[sorted_days.index(d)-1]] - 1 if sorted_days.index(d) > 0 else 0, "own": own_per_day.get(d, 0)} for d in sorted(big, reverse=True)]
+
+    # --- OHLC bars (last 10 days) ---
+    ohlc_slice = bars[max(0, idx-9):idx+1]
+    ohlc_bars = [{"date": datetime.fromtimestamp(b[0], utc).date().isoformat(),
+                  "open": b[1], "high": b[2], "low": b[3], "close": b[4], "volume": int(b[5] or 0)}
+                 for b in ohlc_slice]
+
+    # --- candlestick patterns ---
+    ohlcv_dict = {datetime.fromtimestamp(b[0], utc).date(): (b[1], b[2], b[3], b[4], int(b[5] or 0)) for b in bars if b[4]}
+    candle_patterns = {"today": [], "previous": []}
+    try:
+        _sd = sorted(ohlcv_dict)
+        if len(_sd) >= 3:
+            _pat_days = _sd[-3:]
+            _ohlc_win = [(ohlcv_dict[d][0], ohlcv_dict[d][1], ohlcv_dict[d][2], ohlcv_dict[d][3]) for d in _pat_days]
+            _ctx_closes = [ohlcv_dict[d][3] for d in _sd[:-3][-10:]]
+            pat_today = detect_patterns(_ohlc_win, _ctx_closes)
+            if len(_sd) >= 4:
+                _prev_days = _sd[-4:-1]
+                _ohlc_prev = [(ohlcv_dict[d][0], ohlcv_dict[d][1], ohlcv_dict[d][2], ohlcv_dict[d][3]) for d in _prev_days]
+                _ctx_prev = [ohlcv_dict[d][3] for d in _sd[:-4][-10:]]
+                pat_prev = detect_patterns(_ohlc_prev, _ctx_prev)
+            else:
+                pat_prev = []
+            candle_patterns = {"today": pat_today, "previous": pat_prev}
+    except Exception:
+        pass
+
+    # --- CNN prediction (same chart_for_day function as NSE explain.py) ---
+    chart_cnn_result = None
+    try:
+        cnn_today = _cnn.chart_for_day(closes_by_date, ohlcv_dict, target)
+        cnn_prev = _cnn.chart_for_day(closes_by_date, ohlcv_dict, prev_date)
+        chart_cnn_result = {"today": cnn_today, "previous": cnn_prev}
+    except Exception:
+        pass
+
+    # --- news + FinBERT ---
+    try:
+        q_info = sim().yahoo.global_quotes([ticker]).get(ticker, {})
+        name = q_info.get("shortName") or q_info.get("longName") or ticker
+    except Exception:
+        name = ticker
+    search, aliases = _news_mod.company_terms(ticker, name, {})
+    headlines: dict[str, list] = {"company": [], "peers": [], "industry": [], "market": [], "global": []}
+    sentiment_totals: dict[str, dict] = {}
+    try:
+        feed = _news_mod.fetch_feed(_news_mod.search_url(search))
+        raw_articles = _news_mod.parse_items(feed)
+        # classify into scopes
+        from .explain import tone as calc_tone, reasons_in
+        for art in raw_articles[:40]:
+            t = calc_tone(art.title)
+            reasons = reasons_in(art.title)
+            scope = "company"
+            if "Global markets" in reasons or "Interest rates" in reasons:
+                scope = "global"
+            elif "Trade policy" in reasons or "Economy" in reasons:
+                scope = "market"
+            art_dict = {"title": art.title, "source": art.source, "url": art.url,
+                        "published": art.published, "scope": scope, "tone": t, "reasons": reasons}
+            headlines[scope].append(art_dict)
+    except Exception:
+        pass
+
+    # FinBERT on company headlines
+    for scope_key, arts in headlines.items():
+        if not arts:
+            continue
+        titles = [a["title"] for a in arts]
+        sentiments = _fb.score_headlines(titles, timeout=8.0)
+        for a, s in zip(arts, sentiments):
+            a["sentiment"] = {"label": s.label, "pos": s.pos, "neg": s.neg, "neu": s.neu, "score": s.score} if s else None
+        scored = [s.score for s in sentiments if s]
+        if scored:
+            pos = sum(1 for s in sentiments if s and s.label == "positive")
+            neg = sum(1 for s in sentiments if s and s.label == "negative")
+            neu = sum(1 for s in sentiments if s and s.label == "neutral")
+            sentiment_totals[scope_key] = {"avg_score": statistics.fmean(scored), "count": len(scored), "positive": pos, "negative": neg, "neutral": neu}
+
+    # verdict
+    own_move = change - (market_part or 0)
+    if typical_move and abs(own_move) > 2 * typical_move:
+        verdict = "Company-specific move"
+    elif mkt_change_on_day and abs(mkt_change_on_day) > 0.01 and abs(change) < abs(mkt_change_on_day) * 1.5:
+        verdict = "Market-wide move"
+    else:
+        verdict = "Ordinary day"
+
+    result = {
+        "symbol": ticker, "date": target.isoformat(), "previous_date": prev_date.isoformat(),
+        "latest_date": sorted_days[-1].isoformat(), "change": change, "price": price, "prev_close": prev_close,
+        "verdict": verdict, "summary": [f"{ticker} moved {change*100:+.2f}% on {target}."],
+        "market": {"name": "S&P 500", "change": mkt_change_on_day},
+        "beta": beta, "market_part": market_part, "typical_move": typical_move,
+        "sector": None, "peers": peers, "profile": profile, "reasons": [], "big_days": big_days,
+        "headlines": headlines, "runtime_ms": 0,
+        "ohlc_bars": ohlc_bars, "candle_patterns": candle_patterns, "chart_cnn": chart_cnn_result,
+        "sentiment_totals": sentiment_totals, "currency": q_info.get("currency", "USD") if "q_info" in dir() else "USD",
+    }
+    _GLOBAL_EXPLAIN_CACHE[cache_key] = (time.time(), result)
+    return result
+
+
+_GLOBAL_ANALYSIS_CACHE: dict[str, tuple[float, dict]] = {}
+_GLOBAL_ANALYSIS_TTL = 1800
+
+
+@app.get("/v1/global/analysis/{ticker:path}")
+def global_analysis(ticker: str, date: str | None = Query(None)) -> dict:
+    """OpenRouter AI analysis of why a global stock moved. Reuses analysis.py logic."""
+    from .analysis import ask_model, build_prompt, number_headlines, INDIA, WORLD, AnalysisError
+    ticker = ticker.strip().upper()
+    cache_key = f"{ticker}:{date or ''}"
+    cached = _GLOBAL_ANALYSIS_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _GLOBAL_ANALYSIS_TTL:
+        return cached[1]
+
+    # Reuse the explain data
+    try:
+        explanation = global_explain(ticker, date)
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(502, str(err)) from None
+
+    # Build the same prompt structure but with global market context
+    name = explanation.get("profile", {}).get("sector") and ticker or ticker
+    try:
+        q = sim().yahoo.global_quotes([ticker]).get(ticker, {})
+        name = q.get("shortName") or q.get("longName") or ticker
+    except Exception:
+        pass
+
+    # Use the same evidence + prompt from analysis.py
+    evidence = number_headlines(explanation)
+
+    # World markets for context (S&P 500, NASDAQ, VIX, etc.)
+    import datetime as _dt
+    from datetime import timezone
+    day = _dt.date.fromisoformat(explanation["date"])
+    pool = sim().explainer.pool()
+    world_tickers = [("^GSPC", "S&P 500", True), ("^IXIC", "NASDAQ", True), ("^VIX", "VIX", True),
+                     ("BZ=F", "Brent crude", True), ("GC=F", "Gold", True), ("DX-Y.NYB", "USD Index", True)]
+    world = []
+    for wticker, wname, _ in world_tickers:
+        try:
+            wbars = sim().yahoo.global_chart(wticker, "5d", "1d")
+            wbars_list = wbars.get("bars", [])
+            if len(wbars_list) >= 2:
+                prev_close_w = wbars_list[-2][4]
+                last_close_w = wbars_list[-1][4]
+                if prev_close_w:
+                    world.append((wname, last_close_w / prev_close_w - 1, day.isoformat()))
+        except Exception:
+            pass
+
+    # Build a simplified prompt for global stocks
+    import datetime as _dt2
+    prev_date = _dt2.date.fromisoformat(explanation["previous_date"])
+    lines = [
+        f"STOCK: {ticker} ({name}), trading on {q.get('exchange', 'global exchange') if 'q' in dir() else 'global exchange'}.",
+        f"Sector: {explanation['profile'].get('sector') or 'n/a'} / {explanation['profile'].get('industry') or 'n/a'}.",
+        f"Business: {(explanation['profile'].get('summary') or 'n/a')[:600]}",
+        "",
+        f"DAY TO EXPLAIN: {day:%A %d %B %Y} (previous trading day {prev_date:%A %d %B}).",
+        f"Move: {explanation['change']*100:+.2f}%, from {explanation.get('currency','USD')} {explanation['prev_close']:.2f} to {explanation.get('currency','USD')} {explanation['price']:.2f}.",
+        f"Beta against S&P 500: {explanation['beta'] if explanation['beta'] is not None else 'n/a'}.",
+        f"Part explained by S&P 500 move: {(explanation['market_part'] or 0)*100:+.2f}%. Stock's own move: {(explanation['change']-(explanation['market_part'] or 0))*100:+.2f}%.",
+        "",
+        "SIMILAR COMPANIES TODAY: " + (", ".join(f"{p['symbol']} {(p['change'] or 0)*100:+.2f}%" for p in explanation['peers']) or "none found"),
+        "WORLD MARKETS: " + ", ".join(f"{n} {c*100:+.2f}%" for n, c, _ in world),
+        "",
+        f"HEADLINES (numbered):",
+    ]
+    from .session import IST
+    for h in evidence:
+        import datetime
+        when = datetime.datetime.fromtimestamp(h["published"], IST).strftime("%d %b %H:%M")
+        sent = h.get("sentiment")
+        sent_tag = f" [FinBERT: {sent['label']}, score {sent['score']:+.2f}]" if sent else ""
+        scope_names = {"company": "about the company", "peers": "about similar companies", "industry": "about its industry",
+                       "market": "about the market", "global": "about world markets"}
+        lines.append(f"[{h['n']}] ({scope_names.get(h['scope'],'')}) {when} | {h['title']}{sent_tag} | {h['source']}")
+    if not evidence:
+        lines.append("(no headlines found)")
+    lines += ["", f"Explain why {ticker} moved {explanation['change']*100:+.2f}% on {day:%d %B %Y}. "
+              "Reply with the JSON object only."]
+    prompt = "\n".join(lines)
+    try:
+        reply = ask_model(prompt)
+    except AnalysisError as err:
+        raise HTTPException(502, f"Claude could not write the analysis: {err}") from None
+    result = {"symbol": ticker, "date": explanation["date"], "explanation": explanation,
+              "evidence": evidence, "india": [], "world": [{"name": n, "change": round(c, 5), "date": d} for n, c, d in world],
+              "analysis": reply["answer"], "raw": reply["text"], "model": reply["model"], "seconds": reply["seconds"]}
+    _GLOBAL_ANALYSIS_CACHE[cache_key] = (time.time(), result)
+    return result
 
 
 # ---- orders ----
@@ -699,9 +1153,25 @@ async def intraday_recommendations(req: IntradayRequest) -> Response:
     result = intraday.recommend_intraday(views, rules, confidences, req.budget, config.MIS_MARGIN_DIVISOR,
                                          sim().session(), now)
     for row in result["stocks"]:
-        if sim().instruments[row["symbol"]].series in config.DELIVERY_ONLY_SERIES and row["action"] in ("BUY", "SELL"):
+        sym = row["symbol"]
+        if sim().instruments[sym].series in config.DELIVERY_ONLY_SERIES and row["action"] in ("BUY", "SELL"):
             row.update(action="NO_TRADE", quantity=0, position_value=0, margin=0, max_loss=0, max_gain=0,
                        note="Trade-for-trade (BE series) stock: delivery only, so no intraday trades.")
+        pivot_resp = sim().get_pivot(sym)
+        if pivot_resp["error"] is None:
+            levels = {k: pivot_resp[k] for k in ("pp", "r1", "r2", "r3", "s1", "s2", "s3")}
+            row["pivot"] = {"symbol": sym, "trading_day": pivot_resp["trading_day"], **levels, "error": None}
+            row["pivot_entry"] = _pivot.compute_entry_exit(levels, row["ltp"], sim().instruments[sym].tick,
+                                                           row.get("vwap"))
+        else:
+            row["pivot"] = {"symbol": sym, "trading_day": pivot_resp["trading_day"],
+                            "pp": None, "r1": None, "r2": None, "r3": None,
+                            "s1": None, "s2": None, "s3": None, "error": pivot_resp["error"]}
+            row["pivot_entry"] = None
+        if sim().live:
+            row["indicators"] = sim().get_indicators(sym)
+        else:
+            row["indicators"] = None
     done = time.perf_counter_ns()
     result["timing"] = {"checks_us": (checked - started) // 1000, "snapshot_us": (copied - checked) // 1000,
                         "signals_us": (done - copied) // 1000, "total_us": (done - started) // 1000}

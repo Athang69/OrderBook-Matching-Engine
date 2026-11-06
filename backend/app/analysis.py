@@ -23,6 +23,7 @@ import urllib.request
 
 from .explain import Explainer
 from .session import IST
+from . import indicators as _indicators
 
 MODEL = os.environ.get("ORDERBOOK_CLAUDE_MODEL", "opus")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -72,8 +73,10 @@ Rules:
  "confidence": "high" | "medium" | "low",
  "confidence_reason": "one sentence",
  "watch": ["two or three things to watch next"],
- "technical_view": "one or two sentences on what the candlestick patterns and chart model suggest"}
-Give two to four drivers, the most important first."""
+ "technical_view": "one or two sentences on what the candlestick patterns and chart model suggest",
+ "sr_view": "one or two sentences: where price closed relative to the pivot levels and what that implies for the next session (entry near support, breakout above resistance, etc.). Omit if pivot data was not provided."}
+Give two to four drivers, the most important first.
+Do NOT write any reasoning, analysis, or explanation before the JSON. Output the JSON object immediately as the very first character of your response."""
 
 
 class AnalysisError(RuntimeError):
@@ -154,8 +157,67 @@ def build_prompt(e: dict, name: str, evidence: list[dict], india: list[tuple], w
         if cnn_prev and cnn_prev.get("prob_up") is not None:
             lines.append(f"  Chart ending {previous:%d %b}: P(up next 5 days) = {cnn_prev['prob_up']:.1%}")
 
+    # Classic Pivot Levels (additive block — does not change existing prompt structure)
+    ohlc_bars = e.get("ohlc_bars", [])
+    ohlc_by_date = {b["date"]: b for b in ohlc_bars}
+    prev_bar = ohlc_by_date.get(e["previous_date"])
+    if prev_bar and prev_bar.get("high") and prev_bar.get("low") and prev_bar.get("close"):
+        from .pivot import compute_pivot as _cp, compute_entry_exit as _ce
+        pv = _cp(int(prev_bar["high"]), int(prev_bar["low"]), int(prev_bar["close"]))
+        if pv:
+            def _r(p): return f"₹{p / 100:,.2f}"
+            price_paise = int(e["price"])
+            if price_paise > pv["r3"]:      pos = "above R3"
+            elif price_paise > pv["r2"]:    pos = "between R2 and R3"
+            elif price_paise > pv["r1"]:    pos = "between R1 and R2"
+            elif price_paise > pv["pp"]:    pos = "between PP and R1"
+            elif price_paise > pv["s1"]:    pos = "between PP and S1"
+            elif price_paise > pv["s2"]:    pos = "between S1 and S2"
+            elif price_paise > pv["s3"]:    pos = "between S2 and S3"
+            else:                           pos = "below S3"
+            inst = e.get("_tick")  # injected by Analyst._run when available
+            tick = inst if isinstance(inst, int) and inst > 0 else 5
+            entry_sug = _ce(pv, price_paise, tick)
+            lines += [
+                "",
+                f"CLASSIC PIVOT LEVELS (from {previous:%d %b} H {_r(prev_bar['high'])} "
+                f"/ L {_r(prev_bar['low'])} / C {_r(prev_bar['close'])}):",
+                f"  PP {_r(pv['pp'])}  R1 {_r(pv['r1'])}  R2 {_r(pv['r2'])}  R3 {_r(pv['r3'])}",
+                f"  S1 {_r(pv['s1'])}  S2 {_r(pv['s2'])}  S3 {_r(pv['s3'])}",
+                f"  Close on {day:%d %b} ({_r(price_paise)}) was {pos}.",
+                f"  Entry/exit suggestion: {entry_sug['reason']}",
+            ]
+
+    # Technical indicators (additive block — does not change existing prompt structure)
+    indicators = e.get("indicators")
+    if indicators:
+        ind_lines = ["", "TECHNICAL INDICATORS (daily, as of previous close):"]
+        rsi = indicators.get("rsi") or {}
+        if "value" in rsi:
+            ind_lines.append(f"  RSI(14): {rsi['value']} — {rsi['verdict']} — {rsi['reason']}")
+        macd = indicators.get("macd") or {}
+        if "macd" in macd:
+            ind_lines.append(f"  MACD(12,26,9): MACD {macd['macd']}, Signal {macd['signal']}, "
+                             f"Histogram {macd['histogram']} — {macd['verdict']} — {macd['reason']}")
+        fib = indicators.get("fibonacci") or {}
+        if "levels" in fib:
+            nearest_b = (f"{fib['nearest_ratio_below']*100:.1f}% (₹{fib['nearest_below']:.2f})"
+                         if fib.get("nearest_below") is not None else "none")
+            nearest_a = (f"{fib['nearest_ratio_above']*100:.1f}% (₹{fib['nearest_above']:.2f})"
+                         if fib.get("nearest_above") is not None else "none")
+            ind_lines.append(f"  Fibonacci ({fib['trend']}, {_indicators.FIB_LOOKBACK}-day swing "
+                             f"₹{fib['swing_low']:.2f}–₹{fib['swing_high']:.2f}): "
+                             f"support {nearest_b}, resistance {nearest_a}")
+        beta = indicators.get("beta") or {}
+        if "value" in beta:
+            ind_lines.append(f"  Beta vs {beta['benchmark']} ({beta['window_days']} days): "
+                             f"{beta['value']} — {beta['verdict']} — {beta['reason']}")
+        if len(ind_lines) > 1:
+            lines += ind_lines
+
     lines += ["", f"Explain why {e['symbol']} moved {_pct(e['change'])} on {day:%d %B %Y}. "
-              f"Include a technical_view field in your JSON about the candlestick patterns and chart model. "
+              f"Include a technical_view field about the candlestick patterns and chart model, "
+              f"and an sr_view field about the pivot level position and entry/exit implication. "
               f"Reply with the JSON object only."]
     return "\n".join(lines)
 
@@ -163,11 +225,16 @@ def build_prompt(e: dict, name: str, evidence: list[dict], india: list[tuple], w
 def read_answer(text: str) -> dict | None:
     """The JSON object in a model's reply, ignoring any reasoning or code fences around it."""
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    try:
-        return json.loads(match.group(0)) if match else None
-    except json.JSONDecodeError:
-        return None
+    # Find the last { ... } block — models sometimes write reasoning before the JSON
+    last = None
+    for m in re.finditer(r"\{.*\}", text, re.DOTALL):
+        try:
+            parsed = json.loads(m.group(0))
+            if isinstance(parsed, dict):
+                last = parsed
+        except json.JSONDecodeError:
+            pass
+    return last
 
 
 def ask_model(prompt: str) -> dict:
@@ -180,7 +247,7 @@ def ask_model(prompt: str) -> dict:
 
 def ask_openrouter(prompt: str, key: str) -> dict:
     started = time.time()
-    body = {"models": OPENROUTER_MODELS, "temperature": 0.3, "max_tokens": 3000, "reasoning": {"exclude": True},
+    body = {"models": OPENROUTER_MODELS, "temperature": 0.3, "max_tokens": 6000,
             "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}]}
     request = urllib.request.Request(OPENROUTER_URL, data=json.dumps(body).encode(), headers={
         "Authorization": f"Bearer {key}", "Content-Type": "application/json",
@@ -227,9 +294,10 @@ def ask_claude(prompt: str, model: str = MODEL) -> dict:
 
 
 class Analyst:
-    def __init__(self, explainer: Explainer, names):
+    def __init__(self, explainer: Explainer, names, get_indicators=None):
         self._explainer = explainer
         self._names = names  # symbol -> company name
+        self._get_indicators = get_indicators  # optional callable: symbol -> indicator dict
         self._lock = threading.Lock()
         self._cache: dict[tuple, tuple[float, dict]] = {}
         self._running: dict[tuple, threading.Event] = {}
@@ -268,9 +336,32 @@ class Analyst:
         india = [(n, j.result()[1]) for n, j in india_jobs if j.result()]
         world = [(n, j.result()[1], j.result()[0]) for n, j in world_jobs if j.result()]
         evidence = number_headlines(explanation)
+        # Inject indicators into the explanation so build_prompt can include them
+        if self._get_indicators is not None:
+            try:
+                explanation = {**explanation, "indicators": self._get_indicators(symbol)}
+            except Exception:
+                pass  # indicators are additive — never block the analysis
         prompt = build_prompt(explanation, self._names(symbol), evidence, india, world)
         reply = ask_model(prompt)
+
+        # Deterministic S/R levels and entry/exit — computed from explanation data, not from LLM output
+        sr_levels = None
+        sr_entry = None
+        ohlc_bars = explanation.get("ohlc_bars", [])
+        prev_bar = {b["date"]: b for b in ohlc_bars}.get(explanation["previous_date"])
+        if prev_bar and prev_bar.get("high") and prev_bar.get("low") and prev_bar.get("close"):
+            from .pivot import compute_pivot as _cp2, compute_entry_exit as _ce2
+            pv = _cp2(int(prev_bar["high"]), int(prev_bar["low"]), int(prev_bar["close"]))
+            if pv:
+                trading_day = explanation["date"]
+                sr_levels = {"symbol": symbol, "trading_day": trading_day, **pv, "error": None}
+                tick = explanation.get("_tick")
+                tick = tick if isinstance(tick, int) and tick > 0 else 5
+                sr_entry = _ce2(pv, int(explanation["price"]), tick)
+
         return {"symbol": symbol, "date": explanation["date"], "explanation": explanation, "evidence": evidence,
                 "india": [{"name": n, "change": round(c, 5)} for n, c in india],
                 "world": [{"name": n, "change": round(c, 5), "date": d} for n, c, d in world],
-                "analysis": reply["answer"], "raw": reply["text"], "model": reply["model"], "seconds": reply["seconds"]}
+                "analysis": reply["answer"], "raw": reply["text"], "model": reply["model"], "seconds": reply["seconds"],
+                "sr_levels": sr_levels, "sr_entry": sr_entry}
