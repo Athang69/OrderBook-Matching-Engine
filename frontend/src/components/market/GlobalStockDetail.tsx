@@ -1052,14 +1052,19 @@ export function GlobalStockDetail({ ticker, onBack }: Props) {
   const [, setWhyDate] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoadingQ(true); setQuote(null);
-    api.globalQuote([ticker])
-      .then(res => setQuote(res.quotes[ticker] ?? null))
+    // Global stocks have no stream, so the quote is polled; a failed poll keeps the last price on screen.
+    const refresh = () => api.globalQuote([ticker])
+      .then(res => { if (!cancelled && res.quotes[ticker]) setQuote(res.quotes[ticker]); })
       .catch(() => {})
-      .finally(() => setLoadingQ(false));
+      .finally(() => { if (!cancelled) setLoadingQ(false); });
+    refresh();
+    const timer = window.setInterval(refresh, 10_000);
     api.globalProfile(ticker)
-      .then(p => setProfile(p))
+      .then(p => { if (!cancelled) setProfile(p); })
       .catch(() => {});
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [ticker]);
 
   const scrollToWhy = () => {

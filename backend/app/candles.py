@@ -34,13 +34,12 @@ def trend(closes: list[int], n: int = 5) -> str:
     """'up', 'down' or 'flat' from the last n closes before the pattern window."""
     if len(closes) < n:
         return "flat"
-    recent = closes[-n:]
-    first_half = sum(recent[:n // 2]) / max(n // 2, 1)
-    second_half = sum(recent[n // 2:]) / max(n - n // 2, 1)
-    pct = (second_half - first_half) / max(first_half, 1)
-    if pct > 0.015:
+    # The change over the last n closes. 1% suits large caps that move about 1% a day; the old
+    # half-average test with 1.5% called most of their weeks "flat", which hid every reversal pattern.
+    pct = (closes[-1] - closes[-n]) / max(closes[-n], 1)
+    if pct > 0.01:
         return "up"
-    elif pct < -0.015:
+    elif pct < -0.01:
         return "down"
     return "flat"
 
@@ -53,22 +52,22 @@ def _doji(o, h, l, c, r):
 def _hammer(o, h, l, c, r, tr):
     b = body(o, c)
     return (tr == "down" and lower_shadow(o, l, c) >= 2 * b
-            and upper_shadow(o, h, c) <= 0.3 * b and r > 0)
+            and upper_shadow(o, h, c) <= max(0.3 * b, 0.1 * r) and r > 0)
 
 def _hanging_man(o, h, l, c, r, tr):
     b = body(o, c)
     return (tr == "up" and lower_shadow(o, l, c) >= 2 * b
-            and upper_shadow(o, h, c) <= 0.3 * b and r > 0)
+            and upper_shadow(o, h, c) <= max(0.3 * b, 0.1 * r) and r > 0)
 
 def _inverted_hammer(o, h, l, c, r, tr):
     b = body(o, c)
     return (tr == "down" and upper_shadow(o, h, c) >= 2 * b
-            and lower_shadow(o, l, c) <= 0.3 * b and r > 0)
+            and lower_shadow(o, l, c) <= max(0.3 * b, 0.1 * r) and r > 0)
 
 def _shooting_star(o, h, l, c, r, tr):
     b = body(o, c)
     return (tr == "up" and upper_shadow(o, h, c) >= 2 * b
-            and lower_shadow(o, l, c) <= 0.3 * b and r > 0)
+            and lower_shadow(o, l, c) <= max(0.3 * b, 0.1 * r) and r > 0)
 
 def _marubozu(o, h, l, c, r):
     return (body(o, c) >= 0.95 * r and r > 0)
@@ -175,8 +174,11 @@ def detect_patterns(ohlc: list[tuple[int, int, int, int]],
         return []
 
     found: list[str] = []
-    ctx = context_closes or []
-    tr = trend(ctx)
+    # The trend that matters is the one just before each pattern's first bar: one-bar patterns look at
+    # the closes up to the day before, three-bar patterns at the closes before all three bars.
+    closes = (context_closes or []) + [bar[3] for bar in ohlc]
+    tr1, tr2, tr3 = trend(closes[:-1]), trend(closes[:-2]), trend(closes[:-3])
+    tr = tr1
 
     # Most recent bar
     o, h, l, c = ohlc[-1]
@@ -198,28 +200,28 @@ def detect_patterns(ohlc: list[tuple[int, int, int, int]],
 
     # Two-bar
     if len(ohlc) >= 2:
-        if _bullish_engulfing(ohlc, tr):
+        if _bullish_engulfing(ohlc, tr2):
             found.append("Bullish engulfing")
-        if _bearish_engulfing(ohlc, tr):
+        if _bearish_engulfing(ohlc, tr2):
             found.append("Bearish engulfing")
-        if _bullish_harami(ohlc, tr):
+        if _bullish_harami(ohlc, tr2):
             found.append("Bullish harami")
-        if _bearish_harami(ohlc, tr):
+        if _bearish_harami(ohlc, tr2):
             found.append("Bearish harami")
-        if _piercing_line(ohlc, tr):
+        if _piercing_line(ohlc, tr2):
             found.append("Piercing line")
-        if _dark_cloud(ohlc, tr):
+        if _dark_cloud(ohlc, tr2):
             found.append("Dark cloud cover")
 
     # Three-bar
     if len(ohlc) >= 3:
-        if _morning_star(ohlc, tr):
+        if _morning_star(ohlc, tr3):
             found.append("Morning star")
-        if _evening_star(ohlc, tr):
+        if _evening_star(ohlc, tr3):
             found.append("Evening star")
-        if _three_white_soldiers(ohlc, tr):
+        if _three_white_soldiers(ohlc, tr3):
             found.append("Three white soldiers")
-        if _three_black_crows(ohlc, tr):
+        if _three_black_crows(ohlc, tr3):
             found.append("Three black crows")
 
     return [{"name": p, **PATTERN_INFO[p]} for p in found]

@@ -206,8 +206,13 @@ function DeliveryResult({ result, placing, outcomes, onBuy, onBack, onClose }: {
 
   return (
     <div className="modal-body">
-      <div className={rec ? "verdict up" : "verdict neutral"} role="status">
-        {rec ? (
+      <div className={rec && !result.low_confidence ? "verdict up" : "verdict neutral"} role="status">
+        {rec && result.low_confidence ? (
+          <>
+            <strong>Low confidence: buy the {buys.length} most picked stocks, {buys.map((s) => s.symbol).join(", ")}.</strong>
+            <span>No stock was picked in {needed}% of the optimiser's {result.method.resamples} re-runs, so these are the best of a weak set. Consider other stocks or revisit your views.</span>
+          </>
+        ) : rec ? (
           <>
             <strong>Buy {buys.length} of the {result.stocks.length} stocks: {buys.map((s) => s.symbol).join(", ")}.</strong>
             <span>Each was picked in at least {needed}% of the optimiser's {result.method.resamples} re-runs with your views.</span>

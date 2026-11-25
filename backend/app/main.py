@@ -819,7 +819,7 @@ def global_explain(ticker: str, date: str | None = Query(None)) -> dict:
             peer_quotes = sim().yahoo.global_quotes(similar_tickers)
             for pt in similar_tickers:
                 q = peer_quotes.get(pt, {})
-                chg_pct = q.get("regularMarketChangePercent")
+                chg_pct = q.get("change_pct")  # parse_global_quote gives the change in percent
                 peers.append({"symbol": pt, "change": chg_pct / 100 if chg_pct is not None else None})
     except Exception:
         pass
@@ -1036,7 +1036,7 @@ def global_analysis(ticker: str, date: str | None = Query(None)) -> dict:
     try:
         reply = ask_model(prompt)
     except AnalysisError as err:
-        raise HTTPException(502, f"Claude could not write the analysis: {err}") from None
+        raise HTTPException(502, f"The AI model could not write the analysis: {err}") from None
     result = {"symbol": ticker, "date": explanation["date"], "explanation": explanation,
               "evidence": evidence, "india": [], "world": [{"name": n, "change": round(c, 5), "date": d} for n, c, d in world],
               "analysis": reply["answer"], "raw": reply["text"], "model": reply["model"], "seconds": reply["seconds"]}
@@ -1219,7 +1219,7 @@ def analysis(symbol: str, date: str | None = Query(None, description="YYYY-MM-DD
     except ExplainError as err:
         raise HTTPException(422, str(err)) from None
     except (AnalysisError, subprocess.TimeoutExpired) as err:
-        raise HTTPException(502, f"Claude could not write the analysis: {err}") from None
+        raise HTTPException(502, f"The AI model could not write the analysis: {err}") from None
 
 
 # ---- news ----

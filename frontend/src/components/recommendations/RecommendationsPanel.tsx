@@ -72,18 +72,23 @@ export function RecommendationsPanel({ watchlist, portfolio, lastDelivery, onOpe
           </div>
           <h3 className="rec-card-title">Intraday</h3>
 
-          {displaySignals.length > 0 ? (
+          {signals.data && !signals.data.session.intraday_open ? (
+            // Closed: momentum and trade flow need live trades, so the scores would all look alike.
+            <p className="muted small" style={{ minHeight: 60, flex: 1 }}>
+              {signals.data.session.state === "OPEN"
+                ? "Intraday trading closed at 3:20 pm. Live signals start again at 9:15 am."
+                : `${signals.data.session.label}. Live signals come from real trades and start at 9:15 am.`}
+            </p>
+          ) : displaySignals.length > 0 ? (
             <ul className="signal-preview">
               {displaySignals.map((s) => {
-                const isBuy = s.action === "BUY" || (!signals.data?.session.intraday_open && (s.model_score ?? 0) >= 0);
                 const score = s.model_score ?? 0;
+                const pill = s.action === "BUY" ? "up" : s.action === "SELL" ? "down" : "";
                 return (
                   <li key={s.symbol}>
                     <span className="sig-sym">{s.symbol}</span>
-                    <span className={`sig-pill ${isBuy ? "up" : "down"}`}>
-                      {signals.data?.session.intraday_open
-                        ? (s.action === "BUY" ? "Buy" : "Sell")
-                        : (isBuy ? "Bullish" : "Bearish")}
+                    <span className={`sig-pill ${pill}`}>
+                      {s.action === "BUY" ? "Buy" : s.action === "SELL" ? "Sell" : "Wait"}
                     </span>
                     <span className={`sig-score num ${score >= 0 ? "up" : "down"}`}>
                       {score >= 0 ? "+" : ""}{score.toFixed(2)}

@@ -90,6 +90,10 @@ def recommend(symbols: list[str], confidences: dict[str, float], budget: int, la
     history_agreement, agreement = pf.selection_confidence(returns, rf, settings.resamples, settings.min_weight, rng,
                                                            tilts=[np.zeros(len(symbols)), tilts])
     buy = [i for i in range(len(symbols)) if agreement[i] >= settings.buy_agreement - 1e-9]
+    # If no stock clears the bar, still buy the two most often picked, and say the confidence is low.
+    low_confidence = not buy
+    if low_confidence:
+        buy = sorted(np.argsort(-agreement)[:min(2, len(symbols))].tolist())
 
     # The recommended portfolio: re-optimised over the stocks marked BUY.
     weights = np.zeros(len(symbols))
@@ -97,6 +101,8 @@ def recommend(symbols: list[str], confidences: dict[str, float], budget: int, la
         weights[buy[0]] = 1.0
     elif len(buy) > 1:
         weights[buy] = pf.max_sharpe_weights(viewed_returns[buy], annual_cov[np.ix_(buy, buy)], rf)
+    if low_confidence:  # a fallback pick the optimiser gives no money to is not a buy
+        buy = [i for i in buy if weights[i] > 1e-4]
 
     stocks = []
     invested = 0
@@ -125,7 +131,8 @@ def recommend(symbols: list[str], confidences: dict[str, float], budget: int, la
             "expected_return": round(float(annual_returns[i]), 4),
             "expected_return_with_view": round(float(viewed_returns[i]), 4),
             "volatility": round(float(volatilities[i]), 4),
-            "note": _note(decision, agreement[i], history_agreement[i], settings.buy_agreement, weights[i], quantity),
+            "note": _note(decision, agreement[i], history_agreement[i], settings.buy_agreement, weights[i], quantity,
+                          low_confidence),
         })
     stocks.sort(key=lambda s: (s["decision"] != "BUY", -s["weight"], -s["agreement"]))
 
@@ -157,6 +164,7 @@ def recommend(symbols: list[str], confidences: dict[str, float], budget: int, la
                    "trading_days_per_year": pf.TRADING_DAYS},
         "stocks": stocks,
         "recommended": recommended,
+        "low_confidence": low_confidence,
         "reference_portfolios": {
             "history_only": _summary(history_weights, annual_returns, annual_cov, rf, symbols),
             "max_sharpe": _summary(sharpe_weights, viewed_returns, annual_cov, rf, symbols),
@@ -191,7 +199,8 @@ def _validate(symbols: list[str], confidences: dict[str, float], budget: int, la
     return cleaned, yours
 
 
-def _note(decision: str, agreement: float, history_agreement: float, needed: float, weight: float, quantity: int) -> str:
+def _note(decision: str, agreement: float, history_agreement: float, needed: float, weight: float, quantity: int,
+          low_confidence: bool = False) -> str:
     shown = f"{round(agreement * 100, 1):g}%"
     before = f"{round(history_agreement * 100, 1):g}%"
     change = "" if abs(agreement - history_agreement) < 0.005 else f" ({before} on price history alone)"
@@ -199,6 +208,9 @@ def _note(decision: str, agreement: float, history_agreement: float, needed: flo
         return f"Picked in {shown} of re-runs with your views{change}; a buy needs {needed * 100:g}%."
     if quantity == 0:
         return f"Picked in {shown} of re-runs with your views{change}, but its share of the money is less than one share's price."
+    if low_confidence:
+        return (f"Picked in {shown} of re-runs with your views{change}, below the {needed * 100:g}% bar; one of the "
+                f"two most picked, so it gets {weight * 100:.1f}% of the money with low confidence.")
     return f"Picked in {shown} of re-runs with your views{change}; gets {weight * 100:.1f}% of the money."
 
 

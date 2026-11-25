@@ -306,7 +306,7 @@ function TechnicalCard({ explanation }: { explanation: Explanation }) {
   const hasPatterns = patterns && (patterns.today.length > 0 || patterns.previous.length > 0);
   const hasCnn = cnn && (cnn.today || cnn.previous);
   const hasBars = ohlcBars && ohlcBars.length > 0;
-  if (!hasPatterns && !hasCnn && !hasBars) return null;
+  if (!patterns && !hasCnn && !hasBars) return null;
 
   return (
     <article className="card why-tech">
@@ -363,11 +363,16 @@ function TechnicalCard({ explanation }: { explanation: Explanation }) {
               <CandlestickChart bars={ohlcBars!} date={explanation.date} />
             </>
           )}
-          {hasPatterns && (
+          {patterns && (
             <>
               <h4>Patterns detected</h4>
-              {patterns!.today.map((p) => <PatternBadge key={p.name} pattern={p} when="today" />)}
-              {patterns!.previous.map((p) => <PatternBadge key={`prev-${p.name}`} pattern={p} when="previous day" />)}
+              {patterns.today.map((p) => <PatternBadge key={p.name} pattern={p} when="today" />)}
+              {patterns.previous.map((p) => <PatternBadge key={`prev-${p.name}`} pattern={p} when="previous day" />)}
+              {!hasPatterns && (
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted, #888)', fontStyle: 'italic' }}>
+                  No patterns in the last 2 sessions
+                </span>
+              )}
             </>
           )}
         </div>

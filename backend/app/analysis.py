@@ -20,6 +20,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from .explain import Explainer
 from .session import IST
@@ -293,6 +294,35 @@ def ask_claude(prompt: str, model: str = MODEL) -> dict:
             "seconds": round(time.time() - started, 1)}
 
 
+SAVED_DIR = Path(__file__).resolve().parents[2] / "data" / "analysis"
+
+
+def _day_closed(date: str) -> bool:
+    """A day's analysis can be kept for good once that day's market has closed (3:30 pm IST)."""
+    return dt.datetime.now(IST) >= dt.datetime.fromisoformat(date).replace(hour=15, minute=30, tzinfo=IST)
+
+
+def _load_saved(symbol: str, date: str) -> dict | None:
+    """A finished day's analysis survives restarts, so a slow free model is not asked twice."""
+    path = SAVED_DIR / f"{symbol}_{date}.json"
+    if not _day_closed(date) or not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _save(symbol: str, date: str, result: dict) -> None:
+    if not _day_closed(date) or not result.get("analysis"):  # never keep a reply that could not be read
+        return
+    try:
+        SAVED_DIR.mkdir(parents=True, exist_ok=True)
+        (SAVED_DIR / f"{symbol}_{date}.json").write_text(json.dumps(result, default=str))
+    except OSError:
+        pass
+
+
 class Analyst:
     def __init__(self, explainer: Explainer, names, get_indicators=None):
         self._explainer = explainer
@@ -303,12 +333,20 @@ class Analyst:
         self._running: dict[tuple, threading.Event] = {}
 
     def analyse(self, symbol: str, day: dt.date | None) -> dict:
+        if day is not None:  # a saved day needs no fresh evidence: answer at once, even right after a restart
+            saved = _load_saved(symbol, day.isoformat())
+            if saved is not None:
+                return saved
         explanation = self._explainer.explain(symbol, day)
         key = (symbol, explanation["date"])
         with self._lock:
             hit = self._cache.get(key)
             if hit and time.time() - hit[0] < CACHE_SECONDS:
                 return hit[1]
+            saved = _load_saved(*key)
+            if saved is not None:
+                self._cache[key] = (time.time(), saved)
+                return saved
             waiting = self._running.get(key)
             if waiting is None:
                 self._running[key] = threading.Event()
@@ -318,11 +356,21 @@ class Analyst:
                 hit = self._cache.get(key)
             if hit:
                 return hit[1]
-            raise AnalysisError("The analysis is taking longer than expected. Try again.")
+            with self._lock:
+                still_running = key in self._running
+            if still_running:
+                raise AnalysisError("The analysis is taking longer than expected. Try again.")
+            return self.analyse(symbol, day)  # the first attempt failed: try again instead of failing too
         try:
-            result = self._run(symbol, explanation)
+            try:
+                result = self._run(symbol, explanation)
+            except AnalysisError as err:  # free models fail now and then; one retry usually works
+                print(f"analysis {key} failed, retrying once: {err}", flush=True)
+                time.sleep(2)
+                result = self._run(symbol, explanation)
             with self._lock:
                 self._cache[key] = (time.time(), result)
+            _save(*key, result)
             return result
         finally:
             with self._lock:

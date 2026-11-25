@@ -224,15 +224,16 @@ export function GlobalMarkets({ onClose, initialTicker }: Props) {
                       </thead>
                       <tbody>
                         {items.map((idx) => {
-                          const chg = idx.ltp != null && idx.prev_close ? idx.ltp - idx.prev_close : null;
-                          const pct = chg != null && idx.prev_close ? (chg / idx.prev_close) * 100 : null;
+                          // The backend sends index levels in hundredths, like prices in paise.
+                          const chg = idx.ltp != null && idx.prev_close ? (idx.ltp - idx.prev_close) / 100 : null;
+                          const pct = chg != null && idx.prev_close ? (chg / (idx.prev_close / 100)) * 100 : null;
                           return (
                             <tr key={idx.name} className={idx.ticker ? "clickable" : ""} onClick={() => idx.ticker && loadQuote(idx.ticker)}>
                               <td className="idx-name">{idx.name}</td>
-                              <td className="num">{idx.ltp != null ? idx.ltp.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "—"}</td>
+                              <td className="num">{idx.ltp != null ? (idx.ltp / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
                               <td className={`num ${dir(chg)}`}>{fmtChange(chg, pct)}</td>
-                              <td className="num muted">{idx.high != null ? idx.high.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "—"}</td>
-                              <td className="num muted">{idx.low != null ? idx.low.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "—"}</td>
+                              <td className="num muted">{idx.high != null ? (idx.high / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
+                              <td className="num muted">{idx.low != null ? (idx.low / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}</td>
                             </tr>
                           );
                         })}

@@ -298,6 +298,8 @@ export interface Recommendation {
     trading_days_per_year: number;
   };
   stocks: RecommendedStock[];
+  /** True when no stock cleared the bar and the two most picked were bought anyway. */
+  low_confidence?: boolean;
   recommended: null | {
     symbols: string[];
     expected_return: number;
