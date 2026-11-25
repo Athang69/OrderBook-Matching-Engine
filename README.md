@@ -128,3 +128,10 @@ NSE's full market depth (quantities at the best five prices) is not available fr
 - **Saving state.** Accounts and orders live in memory and reset when the server restarts.
 - **Login.** There is one account.
 - **Market depth** from a broker's data feed.
+
+## Team
+
+- **Athang Kali** ([@Athang69](https://github.com/Athang69))
+- **Shreyash Bawankar** ([@shreyas52kar](https://github.com/shreyas52kar))
+
+The same list is kept in [AUTHORS](AUTHORS).
